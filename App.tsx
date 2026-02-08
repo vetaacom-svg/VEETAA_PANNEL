@@ -51,6 +51,8 @@ export default function App() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
+  const [ribs, setRibs] = useState<RIB[]>([]);
+  const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '+212 600 000 000', email: 'support@veetaa.ma' });
 
   useEffect(() => {
     const handleScroll = () => setIsAtTop(window.scrollY < 20);
@@ -169,6 +171,15 @@ export default function App() {
     if (settingsRes.data) {
       const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
       if (support) setSupportNumber(support.value);
+    }
+
+    const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
+    if (ribsData) setRibs(ribsData);
+
+    const { data: supportInfoData } = await supabase.from('support_info').select('*').limit(1);
+    if (supportInfoData && supportInfoData.length > 0) {
+      setSupportInfo(supportInfoData[0]);
+      setSupportNumber(supportInfoData[0].phone);
     }
     await fetchOrders();
   };

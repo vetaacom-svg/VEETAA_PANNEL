@@ -148,4 +148,17 @@ export interface Announcement {
   content: string;
   images?: string[];
   active: boolean;
+  created_at: string;
+}
+
+export interface RIB {
+  id: number;
+  rib: string;
+  label: string;
+}
+
+export interface SupportInfo {
+  id?: number;
+  phone: string;
+  email: string;
 }

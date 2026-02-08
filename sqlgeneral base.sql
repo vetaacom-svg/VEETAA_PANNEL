@@ -18,6 +18,7 @@ CREATE TABLE public.categories (
   icon_name text,
   color_class text,
   display_order integer DEFAULT 0,
+  image_url text,
   CONSTRAINT categories_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.drivers (
@@ -102,6 +103,12 @@ CREATE TABLE public.profiles (
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.ribs (
+  id integer NOT NULL DEFAULT nextval('ribs_id_seq'::regclass),
+  rib text NOT NULL,
+  label text NOT NULL,
+  CONSTRAINT ribs_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.settings (
   key text NOT NULL,
   value text,
@@ -132,4 +139,10 @@ CREATE TABLE public.super_admins (
   badge_id text NOT NULL,
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT super_admins_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.support_info (
+  id integer NOT NULL DEFAULT nextval('support_info_id_seq'::regclass),
+  phone text NOT NULL,
+  email text NOT NULL,
+  CONSTRAINT support_info_pkey PRIMARY KEY (id)
 );

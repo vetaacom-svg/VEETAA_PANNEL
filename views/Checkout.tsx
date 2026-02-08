@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { CartItem, Store, Order, CategoryID, UserProfile } from '../types';
+import { CartItem, Store, Order, CategoryID, UserProfile, RIB } from '../types';
 import { MapPin, User, Banknote, Landmark, CheckCircle, Camera, X, AlertCircle, Navigation } from 'lucide-react';
-import { RIBS } from '../constants';
 import { supabase, dataUrlToBlob } from '../lib/supabase';
 
 interface CheckoutProps {
@@ -13,11 +12,12 @@ interface CheckoutProps {
   total: number;
   selectedStore: Store | null;
   selectedCategory: CategoryID;
+  ribs: RIB[];
   onPlaceOrder: (order: Order) => void;
 }
 
-const Checkout: React.FC<CheckoutProps> = ({ 
-  user, cart, total, textOrder, prescriptionImage, selectedStore, selectedCategory, onPlaceOrder 
+const Checkout: React.FC<CheckoutProps> = ({
+  user, cart, total, textOrder, prescriptionImage, selectedStore, selectedCategory, ribs, onPlaceOrder
 }) => {
   const [location, setLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [locError, setLocError] = useState<string | null>(null);
@@ -57,7 +57,7 @@ const Checkout: React.FC<CheckoutProps> = ({
 
     setIsUploading(true);
     const simpleId = Math.floor(10000 + Math.random() * 90000).toString();
-    
+
     let remoteReceiptUrl = undefined;
     let remotePrescriptionUrl = undefined;
 
@@ -114,8 +114,8 @@ const Checkout: React.FC<CheckoutProps> = ({
       <div className="space-y-2">
         <h2 className="text-2xl font-black text-slate-800 tracking-tight">Finaliser</h2>
         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3">
-           <User className="w-4 h-4 text-orange-600" />
-           <p className="text-sm font-bold text-slate-700">{user?.fullName} • {user?.phone}</p>
+          <User className="w-4 h-4 text-orange-600" />
+          <p className="text-sm font-bold text-slate-700">{user?.fullName} • {user?.phone}</p>
         </div>
       </div>
 
@@ -129,7 +129,7 @@ const Checkout: React.FC<CheckoutProps> = ({
           </div>
           {!location && (
             <button onClick={requestLocation} disabled={isLocating} className="bg-red-600 text-white text-[9px] font-black px-3 py-2 rounded-xl">
-               {isLocating ? "..." : <Navigation className="w-3 h-3" />}
+              {isLocating ? "..." : <Navigation className="w-3 h-3" />}
             </button>
           )}
         </div>
@@ -152,57 +152,57 @@ const Checkout: React.FC<CheckoutProps> = ({
 
         {paymentStep === 'rib' && (
           <div className="space-y-4">
-             <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400">BANQUE</p><button onClick={() => setPaymentStep('method')} className="text-orange-600 text-xs font-bold">Retour</button></div>
-             {RIBS.map((item, idx) => (
-               <button key={idx} onClick={() => { setSelectedRib(item.rib); setPaymentStep('receipt'); }} className="w-full p-4 rounded-2xl border-2 border-slate-100 text-left">
-                 <p className="text-xs font-bold">{item.bank}</p>
-                 <p className="text-sm font-mono">{item.rib}</p>
-               </button>
-             ))}
+            <div className="flex justify-between items-center"><p className="text-xs font-bold text-slate-400">BANQUE</p><button onClick={() => setPaymentStep('method')} className="text-orange-600 text-xs font-bold">Retour</button></div>
+            {(ribs || []).map((item, idx) => (
+              <button key={idx} onClick={() => { setSelectedRib(item.rib); setPaymentStep('receipt'); }} className="w-full p-4 rounded-2xl border-2 border-slate-100 text-left">
+                <p className="text-xs font-bold">{item.label}</p>
+                <p className="text-sm font-mono">{item.rib}</p>
+              </button>
+            ))}
           </div>
         )}
 
         {paymentStep === 'receipt' && (
           <div className="space-y-4">
-             <div className="flex justify-between"><p className="text-xs font-bold uppercase">Preuve obligatoire</p><button onClick={() => setPaymentStep('rib')} className="text-orange-600 text-xs font-bold">Retour</button></div>
-             <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-3">
-                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-                <p className="text-[10px] text-amber-800 font-bold">L'upload du reçu est obligatoire pour le virement.</p>
-             </div>
-             <div className="p-8 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 bg-slate-50">
-                {receiptImage ? (
-                  <div className="relative w-full h-40">
-                    <img src={receiptImage} className="w-full h-full object-cover rounded-2xl" alt="Reçu" />
-                    <button onClick={() => setReceiptImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><X className="w-4 h-4" /></button>
-                  </div>
-                ) : (
-                  <>
-                    <Camera className="w-8 h-8 text-slate-400" />
-                    <input type="file" accept="image/*" id="receipt" className="hidden" onChange={(e) => {
-                       const file = e.target.files?.[0];
-                       if (file) {
-                         const reader = new FileReader();
-                         reader.onloadend = () => setReceiptImage(reader.result as string);
-                         reader.readAsDataURL(file);
-                       }
-                    }} />
-                    <label htmlFor="receipt" className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase">Sélectionner Reçu</label>
-                  </>
-                )}
-             </div>
+            <div className="flex justify-between"><p className="text-xs font-bold uppercase">Preuve obligatoire</p><button onClick={() => setPaymentStep('rib')} className="text-orange-600 text-xs font-bold">Retour</button></div>
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+              <p className="text-[10px] text-amber-800 font-bold">L'upload du reçu est obligatoire pour le virement.</p>
+            </div>
+            <div className="p-8 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 bg-slate-50">
+              {receiptImage ? (
+                <div className="relative w-full h-40">
+                  <img src={receiptImage} className="w-full h-full object-cover rounded-2xl" alt="Reçu" />
+                  <button onClick={() => setReceiptImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full"><X className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <>
+                  <Camera className="w-8 h-8 text-slate-400" />
+                  <input type="file" accept="image/*" id="receipt" className="hidden" onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setReceiptImage(reader.result as string);
+                      reader.readAsDataURL(file);
+                    }
+                  }} />
+                  <label htmlFor="receipt" className="bg-slate-900 text-white px-6 py-3 rounded-xl text-[10px] font-black uppercase">Sélectionner Reçu</label>
+                </>
+              )}
+            </div>
           </div>
         )}
       </section>
 
       <section className="bg-slate-900 text-white p-6 rounded-[2.5rem] space-y-4 shadow-2xl">
-         <div className="flex justify-between items-center"><span className="text-xl font-bold">Total</span><span className="text-3xl font-black text-orange-500">{total + 15} DH</span></div>
-         <button 
+        <div className="flex justify-between items-center"><span className="text-xl font-bold">Total</span><span className="text-3xl font-black text-orange-500">{total + 15} DH</span></div>
+        <button
           onClick={handleConfirm}
           disabled={!location || (method === 'transfer' && !receiptImage) || isUploading}
           className="w-full bg-white text-slate-900 py-4 rounded-2xl font-black text-lg active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2"
-         >
-           {isUploading ? <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : 'Confirmer'}
-         </button>
+        >
+          {isUploading ? <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : 'Confirmer'}
+        </button>
       </section>
     </div>
   );

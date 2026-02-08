@@ -1,12 +1,13 @@
-
 import React, { useState } from 'react';
 import { ArrowLeft, MessageSquare, Phone, Mail, ChevronRight, HelpCircle } from 'lucide-react';
+import { SupportInfo } from '../types';
 
 interface HelpProps {
   onBack: () => void;
+  supportInfo: SupportInfo;
 }
 
-const Help: React.FC<HelpProps> = ({ onBack }) => {
+const Help: React.FC<HelpProps> = ({ onBack, supportInfo }) => {
   const [chatMode, setChatMode] = useState(false);
 
   const faqs = [
@@ -59,7 +60,7 @@ const Help: React.FC<HelpProps> = ({ onBack }) => {
           <h3 className="text-xl font-black text-orange-500">Une urgence ?</h3>
           <p className="text-slate-400 text-sm font-medium">Nos agents sont disponibles 24/7 pour vous assister dans vos livraisons.</p>
         </div>
-        <button 
+        <button
           onClick={() => setChatMode(true)}
           className="w-full bg-orange-600 text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-orange-900/20 active:scale-95 transition-all"
         >
@@ -81,13 +82,13 @@ const Help: React.FC<HelpProps> = ({ onBack }) => {
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <a href="tel:+212500000000" className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-[2rem] border border-slate-100 gap-2">
-           <Phone className="w-6 h-6 text-orange-600" />
-           <span className="text-xs font-bold text-slate-800">Appeler</span>
+        <a href={`tel:${supportInfo.phone}`} className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-[2rem] border border-slate-100 gap-2">
+          <Phone className="w-6 h-6 text-orange-600" />
+          <span className="text-xs font-bold text-slate-800">Appeler</span>
         </a>
-        <a href="mailto:support@veetaa.ma" className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-[2rem] border border-slate-100 gap-2">
-           <Mail className="w-6 h-6 text-orange-600" />
-           <span className="text-xs font-bold text-slate-800">Email</span>
+        <a href={`mailto:${supportInfo.email}`} className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-[2rem] border border-slate-100 gap-2">
+          <Mail className="w-6 h-6 text-orange-600" />
+          <span className="text-xs font-bold text-slate-800">Email</span>
         </a>
       </div>
     </div>

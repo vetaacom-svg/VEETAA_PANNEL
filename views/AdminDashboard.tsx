@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { Order, OrderStatus, Driver, Store, Product, CategoryID, Announcement, UserProfile, DriverDocument } from '../types';
+import { Order, OrderStatus, Driver, Store, Product, CategoryID, Announcement, UserProfile, DriverDocument, RIB, SupportInfo } from '../types';
 import {
    Package, Clock, CheckCircle2, Users, MapPin, Eye,
    LayoutDashboard, ShoppingBag, Truck, Store as StoreIcon,
@@ -9,7 +9,7 @@ import {
    Plus, Smartphone, MessageCircle, Camera, Link as LinkIcon, Copy,
    Star, AlertTriangle, User, Calendar, CreditCard, Phone, Edit3, Image as ImageIcon,
    Save, Megaphone, Upload, Navigation, Trash, Info, UserCheck, UserMinus, ShieldCheck, RotateCw, LogOut, Share2, Clipboard, Scissors, Copy as CopyIcon, Quote, MessageSquare, Box,
-   DollarSign, BarChart3, TrendingUp, PieChart as PieChartIcon, Receipt, AlertCircle, FileText, Download, ZoomIn, ZoomOut
+   DollarSign, BarChart3, TrendingUp, PieChart as PieChartIcon, Receipt, AlertCircle, FileText, Download, ZoomIn, ZoomOut, Mail
 } from 'lucide-react';
 import { CATEGORIES, MOCK_STORES } from '../constants';
 import { supabase, dataUrlToBlob } from '../lib/supabase';
@@ -111,6 +111,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
    const localProducts = stores.filter(s => !s.isDeleted).flatMap(s => s.products || []);
    const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
+   const [ribs, setRibs] = useState<RIB[]>([]);
+   const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '', email: '' });
+   const [showAddRIB, setShowAddRIB] = useState(false);
+   const [editingRIB, setEditingRIB] = useState<RIB | null>(null);
 
    const fetchData = async () => {
       try {
@@ -119,6 +123,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
          const { data: catData } = await supabase.from('categories').select('*').order('display_order', { ascending: true });
          if (catData) setDbCategories(catData);
+
+         const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
+         if (ribsData) setRibs(ribsData);
+
+         const { data: supportInfoData } = await supabase.from('support_info').select('*').limit(1);
+         if (supportInfoData && supportInfoData.length > 0) {
+            setSupportInfo(supportInfoData[0]);
+            setSupportNumber(supportInfoData[0].phone);
+         }
       } catch (err) {
          console.error("Erreur fetchData:", err);
       }
@@ -513,6 +526,61 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          onAssignDriver(orderId, driverId);
          setSelectedOrder(prev => prev ? { ...prev, assignedDriverId: driverId } : null);
       }
+   };
+
+   const handleSaveSupportInfo = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const formData = new FormData(form);
+      const data = {
+         phone: formData.get('phone') as string,
+         email: formData.get('email') as string
+      };
+
+      if (supportInfo.id) {
+         const { error } = await supabase.from('support_info').update(data).eq('id', supportInfo.id);
+         if (error) alert("Erreur: " + error.message);
+         else alert("Coordonnées support mises à jour !");
+      } else {
+         const { error } = await supabase.from('support_info').insert([data]);
+         if (error) alert("Erreur: " + error.message);
+         else alert("Coordonnées support enregistrées !");
+      }
+      fetchData();
+   };
+
+   const handleCreateRIB = async (e: React.FormEvent) => {
+      e.preventDefault();
+      const form = e.target as HTMLFormElement;
+      const formData = new FormData(form);
+      const ribData = {
+         label: formData.get('label') as string,
+         rib: formData.get('rib') as string
+      };
+
+      if (editingRIB) {
+         const { error } = await supabase.from('ribs').update(ribData).eq('id', editingRIB.id);
+         if (error) alert("Erreur: " + error.message);
+         else {
+            setShowAddRIB(false);
+            setEditingRIB(null);
+            fetchData();
+         }
+      } else {
+         const { error } = await supabase.from('ribs').insert([ribData]);
+         if (error) alert("Erreur: " + error.message);
+         else {
+            setShowAddRIB(false);
+            fetchData();
+         }
+      }
+   };
+
+   const handleDeleteRIB = async (id: number) => {
+      if (!confirm("Supprimer ce RIB ?")) return;
+      const { error } = await supabase.from('ribs').delete().eq('id', id);
+      if (error) alert("Erreur: " + error.message);
+      else fetchData();
    };
 
    const handleSaveSettings = async () => {
@@ -1398,25 +1466,101 @@ ${itemsText}
 
                {/* CONFIGURATION */}
                {activeTab === 'CONFIG' && (
-                  <div className="max-w-2xl space-y-8 animate-in slide-in-from-bottom-6">
-                     <div className="bg-white rounded-[3rem] border p-10 shadow-sm space-y-8">
-                        <h3 className="font-black text-slate-800 uppercase text-xs tracking-[0.2em]">Paramètres Système</h3>
-                        <div className="space-y-6">
-                           <div className="space-y-2">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Numéro Support Client</label>
-                              <input type="text" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold focus:border-orange-500 outline-none transition-all" value={supportNumber} onChange={e => setSupportNumber(e.target.value)} />
+                  <div className="space-y-8 animate-in slide-in-from-bottom-6">
+                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        {/* SUPPORT INFO */}
+                        <div className="bg-white rounded-[3rem] border p-10 shadow-sm space-y-8">
+                           <div className="flex items-center gap-3">
+                              <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl"><Phone size={20} /></div>
+                              <h3 className="font-black text-slate-800 uppercase text-xs tracking-[0.2em]">Contact Support</h3>
                            </div>
-                           <div className="p-6 bg-orange-50 rounded-3xl border border-orange-100 flex items-center gap-4 text-orange-800">
-                              <Info size={24} />
-                              <p className="text-xs font-bold leading-relaxed">Ces modifications impactent directement l'application utilisateur.</p>
+                           <form onSubmit={handleSaveSupportInfo} className="space-y-6">
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Téléphone Support</label>
+                                 <input name="phone" type="text" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold focus:border-orange-500 outline-none transition-all" defaultValue={supportInfo.phone} />
+                              </div>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email Support</label>
+                                 <input name="email" type="email" className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold focus:border-orange-500 outline-none transition-all" defaultValue={supportInfo.email} />
+                              </div>
+                              <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Enregistrer les contacts</button>
+                           </form>
+                        </div>
+
+                        {/* RIB MANAGEMENT */}
+                        <div className="bg-white rounded-[3rem] border p-10 shadow-sm space-y-8">
+                           <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                 <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl"><CreditCard size={20} /></div>
+                                 <h3 className="font-black text-slate-800 uppercase text-xs tracking-[0.2em]">Comptes Bancaires (RIB)</h3>
+                              </div>
+                              <button onClick={() => { setEditingRIB(null); setShowAddRIB(true); }} className="p-2 bg-slate-900 text-white rounded-xl hover:bg-orange-600 transition-colors">
+                                 <Plus size={20} />
+                              </button>
                            </div>
-                           <button onClick={handleSaveSettings} className="bg-slate-900 text-white px-10 py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all">Enregistrer</button>
+
+                           <div className="space-y-4">
+                              {ribs.length === 0 ? (
+                                 <div className="text-center py-10 bg-slate-50 rounded-[2rem] border-2 border-dashed border-slate-200">
+                                    <p className="text-xs font-bold text-slate-400">Aucun RIB configuré</p>
+                                 </div>
+                              ) : (
+                                 ribs.map(r => (
+                                    <div key={r.id} className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100 group">
+                                       <div className="flex flex-col gap-1">
+                                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{r.label}</span>
+                                          <span className="font-bold text-slate-700 tracking-wider">{r.rib}</span>
+                                       </div>
+                                       <div className="flex gap-2">
+                                          <button onClick={() => { setEditingRIB(r); setShowAddRIB(true); }} className="p-2 text-slate-400 hover:text-orange-600 transition-colors"><Edit3 size={16} /></button>
+                                          <button onClick={() => handleDeleteRIB(r.id)} className="p-2 text-slate-400 hover:text-red-600 transition-colors"><Trash2 size={16} /></button>
+                                       </div>
+                                    </div>
+                                 ))
+                              )}
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="p-8 bg-orange-50 rounded-[2.5rem] border border-orange-100 flex items-center gap-6 text-orange-800">
+                        <div className="p-4 bg-white rounded-3xl shadow-sm"><Info size={24} /></div>
+                        <div className="space-y-1">
+                           <p className="font-black uppercase text-[10px] tracking-widest">Information Importante</p>
+                           <p className="text-xs font-bold leading-relaxed max-w-xl">Ces coordonnées sont affichées aux utilisateurs lors du processus de paiement et pour le support direct. Assurez-vous de leur exactitude.</p>
                         </div>
                      </div>
                   </div>
                )}
             </div>
          </main>
+
+         {/* MODAL RIB */}
+         {
+            showAddRIB && (
+               <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddRIB(false)}></div>
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden">
+                     <header className="p-8 border-b flex justify-between items-center">
+                        <h3 className="text-xl font-black uppercase">{editingRIB ? 'Modifier' : 'Nouveau'} RIB</h3>
+                        <button onClick={() => setShowAddRIB(false)} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
+                     </header>
+                     <form onSubmit={handleCreateRIB} className="p-8 space-y-6">
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Libellé (ex: BMCE Bank, Barid Bank)</label>
+                           <input name="label" defaultValue={editingRIB?.label} required className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" />
+                        </div>
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Numéro RIB (24 chiffres)</label>
+                           <input name="rib" defaultValue={editingRIB?.rib} required className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" />
+                        </div>
+                        <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl">
+                           {editingRIB ? 'Enregistrer les modifications' : 'Ajouter le compte'}
+                        </button>
+                     </form>
+                  </div>
+               </div>
+            )
+         }
 
          {/* MODAL COMMANDE */}
          {selectedOrder && (
