@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, CategoryID, Store, CartItem, Order, Product, UserProfile, OrderStatus, Language, Driver, Announcement } from './types';
+import { View, CategoryID, Store, CartItem, Order, Product, UserProfile, OrderStatus, Language, Driver, Announcement, RIB, SupportInfo } from './types';
 import { CATEGORIES, MOCK_STORES, TRANSLATIONS } from './constants';
 import { supabase } from './lib/supabase';
 import Welcome from './views/Welcome';
@@ -53,6 +53,11 @@ export default function App() {
   const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
   const [ribs, setRibs] = useState<RIB[]>([]);
   const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '+212 600 000 000', email: 'support@veetaa.ma' });
+  const [pageVisibility, setPageVisibility] = useState({
+    hideFinance: false,
+    hideStatistics: false,
+    hideAnnouncements: false
+  });
 
   useEffect(() => {
     const handleScroll = () => setIsAtTop(window.scrollY < 20);
@@ -171,6 +176,16 @@ export default function App() {
     if (settingsRes.data) {
       const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
       if (support) setSupportNumber(support.value);
+
+      const hideFinance = settingsRes.data.find((s: any) => s.key === 'hide_finance')?.value === '1';
+      const hideStatistics = settingsRes.data.find((s: any) => s.key === 'hide_statistics')?.value === '1';
+      const hideAnnouncements = settingsRes.data.find((s: any) => s.key === 'hide_announcements')?.value === '1';
+
+      setPageVisibility({
+        hideFinance,
+        hideStatistics,
+        hideAnnouncements
+      });
     }
 
     const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
@@ -400,6 +415,7 @@ export default function App() {
       onLogout={handleLogout}
       onBack={fetchData}
       setStores={setStores}
+      pageVisibility={pageVisibility}
     />
   );
 }

@@ -37,6 +37,11 @@ interface AdminDashboardProps {
    onBack: () => void;
    setStores: React.Dispatch<React.SetStateAction<Store[]>>;
    categories: any[];
+   pageVisibility?: {
+      hideFinance: boolean;
+      hideStatistics: boolean;
+      hideAnnouncements: boolean;
+   };
 }
 
 interface AdminUser extends UserProfile {
@@ -78,7 +83,8 @@ const renderMediaThumbnail = (data: string | null | undefined, size: string = "w
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
    orders: propOrders, users, drivers, stores, announcements: propAnnouncements, categories: propCategories, supportNumber: propSupport,
    onUpdateStatus, onAssignDriver, onArchiveOrder, onRestoreOrder, onDeletePermanently,
-   onBanUser, onLogout, onBack, setStores
+   onBanUser, onLogout, onBack, setStores,
+   pageVisibility = { hideFinance: false, hideStatistics: false, hideAnnouncements: false }
 }) => {
    const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'ORDERS' | 'PRODUCTS' | 'DRIVERS' | 'PARTNERS' | 'USERS' | 'FINANCE' | 'STATISTICS' | 'HISTORY' | 'ANNOUNCEMENTS' | 'CATEGORIES' | 'CONFIG'>('OVERVIEW');
    const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -907,10 +913,16 @@ ${itemsText}
                <NavItem active={activeTab === 'PRODUCTS'} onClick={() => setActiveTab('PRODUCTS')} icon={<ShoppingBag size={20} />} label="Catalogue" />
                <NavItem active={activeTab === 'DRIVERS'} onClick={() => setActiveTab('DRIVERS')} icon={<Truck size={20} />} label="Livreurs" />
                <NavItem active={activeTab === 'PARTNERS'} onClick={() => setActiveTab('PARTNERS')} icon={<StoreIcon size={20} />} label="Marques" />
-               <NavItem active={activeTab === 'FINANCE'} onClick={() => setActiveTab('FINANCE')} icon={<DollarSign size={20} />} label="Finance" />
-               <NavItem active={activeTab === 'STATISTICS'} onClick={() => setActiveTab('STATISTICS')} icon={<BarChart3 size={20} />} label="Statistiques" />
+               {!pageVisibility.hideFinance && (
+                  <NavItem active={activeTab === 'FINANCE'} onClick={() => setActiveTab('FINANCE')} icon={<DollarSign size={20} />} label="Finance" />
+               )}
+               {!pageVisibility.hideStatistics && (
+                  <NavItem active={activeTab === 'STATISTICS'} onClick={() => setActiveTab('STATISTICS')} icon={<BarChart3 size={20} />} label="Statistiques" />
+               )}
                <NavItem active={activeTab === 'HISTORY'} onClick={() => setActiveTab('HISTORY')} icon={<Clock size={20} />} label="Historique" badge={propOrders.filter(o => o.isArchived).length} />
-               <NavItem active={activeTab === 'ANNOUNCEMENTS'} onClick={() => setActiveTab('ANNOUNCEMENTS')} icon={<Megaphone size={20} />} label="Annonces" />
+               {!pageVisibility.hideAnnouncements && (
+                  <NavItem active={activeTab === 'ANNOUNCEMENTS'} onClick={() => setActiveTab('ANNOUNCEMENTS')} icon={<Megaphone size={20} />} label="Annonces" />
+               )}
                <NavItem active={activeTab === 'CATEGORIES'} onClick={() => setActiveTab('CATEGORIES')} icon={<Filter size={20} />} label="Catégories" />
                <NavItem active={activeTab === 'CONFIG'} onClick={() => setActiveTab('CONFIG')} icon={<Settings size={20} />} label="Configuration" />
             </nav>
