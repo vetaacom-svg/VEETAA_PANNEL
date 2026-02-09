@@ -115,7 +115,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setTimeout(() => setIsRefreshing(false), 800);
    };
 
-   const localProducts = stores.filter(s => !s.isDeleted).flatMap(s => s.products || []);
+   const localProducts = stores.filter(s => !s.is_deleted).flatMap(s => s.products || []);
    const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
    const [ribs, setRibs] = useState<RIB[]>([]);
    const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '', email: '' });
@@ -197,6 +197,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [showAddCategory, setShowAddCategory] = useState(false);
    const [editingCategory, setEditingCategory] = useState<any | null>(null);
    const [categoryImagePreview, setCategoryImagePreview] = useState<string | null>(null);
+   const [showDeleteStoreModal, setShowDeleteStoreModal] = useState(false);
+   const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
+   const [deleteStorePassword, setDeleteStorePassword] = useState('');
    useEffect(() => {
       if (editingCategory) {
          setCategoryImagePreview(editingCategory.image_url || null);
@@ -483,13 +486,94 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       else onBack();
    };
 
-   const handleDeleteStore = async (id: string) => {
-      if (!confirm("Supprimer ce partenaire ? (Il sera masqué de l'application mais conservé en base de données)")) return;
-      const { error } = await supabase.from('stores').update({ is_deleted: true }).eq('id', id);
+   const handleDeleteStore = async (store: Store) => {
+      // Compter les produits associés
+      const { data: products, error } = await supabase
+         .from('products')
+         .select('id')
+         .eq('store_id', store.id);
+
+      if (error) {
+         console.error("Erreur lors du comptage des produits:", error);
+      }
+
+      setStoreToDelete(store);
+      setShowDeleteStoreModal(true);
+   };
+
+   const confirmDeleteStore = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!storeToDelete) return;
+
+      try {
+         // 1. Récupérer l'admin connecté
+         const adminToken = localStorage.getItem('admin_token');
+         if (!adminToken) {
+            alert("Session administrateur expirée. Veuillez vous reconnecter.");
+            return;
+         }
+
+         const { data: adminData, error: adminError } = await supabase
+            .from('super_admins')
+            .select('badge_id')
+            .eq('username', adminToken)
+            .single();
+
+         if (adminError || !adminData) {
+            alert("Erreur lors de la vérification de l'administrateur.");
+            return;
+         }
+
+         // 2. Vérifier le mot de passe
+         if (adminData.badge_id !== deleteStorePassword) {
+            alert("❌ Mot de passe incorrect !");
+            setDeleteStorePassword('');
+            return;
+         }
+
+         // 3. Supprimer tous les produits associés
+         const { error: productsError } = await supabase
+            .from('products')
+            .delete()
+            .eq('store_id', storeToDelete.id);
+
+         if (productsError) {
+            alert("Erreur lors de la suppression des produits : " + productsError.message);
+            return;
+         }
+
+         // 4. Soft delete de la marque
+         const { error: storeError } = await supabase
+            .from('stores')
+            .update({ is_deleted: true })
+            .eq('id', storeToDelete.id);
+
+         if (storeError) {
+            alert("Erreur lors de la suppression de la marque : " + storeError.message);
+            return;
+         }
+
+         // 5. Fermer le modal et rafraîchir
+         setShowDeleteStoreModal(false);
+         setStoreToDelete(null);
+         setDeleteStorePassword('');
+         alert("✅ Marque et produits supprimés avec succès !");
+         onBack();
+         await fetchData();
+      } catch (err) {
+         console.error("Erreur lors de la suppression:", err);
+         alert("Une erreur est survenue lors de la suppression.");
+      }
+   };
+
+   const handleRestoreStore = async (id: string) => {
+      if (!confirm("Restaurer cette marque ? Elle redeviendra visible dans l'application.")) return;
+      const { error } = await supabase.from('stores').update({ is_deleted: false }).eq('id', id);
       if (error) alert("Erreur: " + error.message);
       else {
+         alert("✅ Marque restaurée avec succès !");
          onBack();
-         await fetchData(); // Refresh to update list
+         await fetchData();
       }
    };
 
@@ -531,6 +615,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       else {
          onAssignDriver(orderId, driverId);
          setSelectedOrder(prev => prev ? { ...prev, assignedDriverId: driverId } : null);
+      }
+   };
+
+   const handleUpdateDriverRating = async (orderId: string, rating: number) => {
+      const { error } = await supabase.from('orders').update({ driver_rating: rating }).eq('id', parseInt(orderId));
+      if (error) alert("Erreur: " + error.message);
+      else {
+         // Update local state
+         setSelectedOrder(prev => prev ? { ...prev, driverRating: rating } : null);
+         // Find the order in the main list and update it too (hacky but works for now without full refresh)
+         const orderIndex = propOrders.findIndex(o => o.id === orderId);
+         if (orderIndex >= 0) {
+            propOrders[orderIndex].driverRating = rating;
+         }
+         onBack(); // Refresh data from parent
       }
    };
 
@@ -1283,6 +1382,7 @@ ${itemsText}
                                  <th className="px-8 py-5">Livreur</th>
                                  <th className="px-8 py-5">Statut</th>
                                  <th className="px-8 py-5">Livraisons</th>
+                                 <th className="px-8 py-5">Évaluation</th>
                                  <th className="px-8 py-5">Warnings</th>
                                  <th className="px-8 py-5 text-right">Actions</th>
                               </tr>
@@ -1303,6 +1403,28 @@ ${itemsText}
                                     </td>
                                     <td className="px-8 py-5 font-bold">
                                        {propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered').length}
+                                    </td>
+                                    <td className="px-8 py-5">
+                                       {(() => {
+                                          const driverRatings = propOrders.filter(o => o.assignedDriverId === d.id && o.driverRating).map(o => o.driverRating!);
+                                          const avgRating = driverRatings.length > 0 ? (driverRatings.reduce((a, b) => a + b, 0) / driverRatings.length) : 0;
+                                          const roundedRating = Math.round(avgRating);
+                                          return avgRating > 0 ? (
+                                             <div className="flex items-center gap-1">
+                                                {[1, 2, 3, 4, 5].map((star) => (
+                                                   <Star
+                                                      key={star}
+                                                      size={12}
+                                                      fill={star <= roundedRating ? "#eab308" : "none"}
+                                                      className={star <= roundedRating ? "text-yellow-500" : "text-slate-300"}
+                                                   />
+                                                ))}
+                                                <span className="text-[10px] font-black text-yellow-600 ml-1">{avgRating.toFixed(1)}</span>
+                                             </div>
+                                          ) : (
+                                             <span className="text-[10px] text-slate-400 italic">Aucune note</span>
+                                          );
+                                       })()}
                                     </td>
                                     <td className="px-8 py-5">
                                        <div className="flex items-center gap-2">
@@ -1335,7 +1457,7 @@ ${itemsText}
                         </button>
                      </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {stores.filter(s => !s.isDeleted).map(s => (
+                        {stores.filter(s => !s.is_deleted).map(s => (
                            <div key={s.id} className="bg-white p-6 rounded-[2.5rem] border shadow-sm space-y-4">
                               <div className="flex items-center gap-4">
                                  <img src={s.image_url || s.image || 'https://via.placeholder.com/100'} className="w-16 h-16 rounded-[1.25rem] object-cover" />
@@ -1356,7 +1478,7 @@ ${itemsText}
                                  <div className="flex items-center gap-1 text-orange-500"><Star size={14} fill="currentColor" /><span className="text-xs font-black">{s.rating || '4.5'}</span></div>
                                  <div className="flex gap-2">
                                     <button onClick={() => { setEditingStore(s); setShowAddPartner(true); }} className="p-2 bg-slate-100 rounded-lg"><Edit3 size={16} /></button>
-                                    <button onClick={() => handleDeleteStore(s.id)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 size={16} /></button>
+                                    <button onClick={() => handleDeleteStore(s)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 size={16} /></button>
                                  </div>
                               </div>
                            </div>
@@ -1546,6 +1668,92 @@ ${itemsText}
             </div>
          </main>
 
+         {/* MODAL CONFIRMATION SUPPRESSION MARQUE */}
+         {
+            showDeleteStoreModal && storeToDelete && (
+               <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                  <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowDeleteStoreModal(false)}></div>
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                     <header className="p-8 border-b flex justify-between items-center bg-red-50">
+                        <div className="flex items-center gap-3">
+                           <div className="p-3 bg-red-100 text-red-600 rounded-2xl">
+                              <AlertTriangle size={24} />
+                           </div>
+                           <h3 className="text-xl font-black uppercase text-red-600">⚠️ Confirmation Requise</h3>
+                        </div>
+                        <button onClick={() => { setShowDeleteStoreModal(false); setDeleteStorePassword(''); }} className="p-2 bg-white rounded-full hover:bg-slate-100 transition-colors">
+                           <X size={20} />
+                        </button>
+                     </header>
+                     <form onSubmit={confirmDeleteStore} className="p-8 space-y-6">
+                        {/* Informations sur la marque */}
+                        <div className="bg-slate-50 p-6 rounded-2xl border-l-4 border-red-500 space-y-3">
+                           <div className="flex items-center gap-3">
+                              <img src={storeToDelete.image_url || storeToDelete.image || 'https://via.placeholder.com/60'} className="w-14 h-14 rounded-xl object-cover border-2 border-red-200" />
+                              <div>
+                                 <h4 className="font-black text-lg text-slate-800">{storeToDelete.name}</h4>
+                                 <p className="text-xs text-slate-500 uppercase tracking-wider">{storeToDelete.category_id}</p>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* Avertissement */}
+                        <div className="bg-orange-50 border border-orange-200 p-5 rounded-2xl space-y-2">
+                           <div className="flex items-start gap-3">
+                              <AlertCircle size={20} className="text-orange-600 flex-shrink-0 mt-0.5" />
+                              <div className="space-y-2">
+                                 <p className="text-sm font-black text-orange-800 uppercase tracking-wide">Action Irréversible</p>
+                                 <p className="text-xs text-orange-700 leading-relaxed">
+                                    Cette action va supprimer définitivement la marque <span className="font-black">{storeToDelete.name}</span> ainsi que <span className="font-black">tous ses produits associés</span>.
+                                 </p>
+                                 <p className="text-xs text-orange-600 italic">
+                                    Cette opération ne peut pas être annulée.
+                                 </p>
+                              </div>
+                           </div>
+                        </div>
+
+                        {/* Champ mot de passe */}
+                        <div className="space-y-2">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                              <ShieldAlert size={14} />
+                              Confirmez avec votre Badge ID (Mot de passe)
+                           </label>
+                           <input
+                              type="password"
+                              value={deleteStorePassword}
+                              onChange={(e) => setDeleteStorePassword(e.target.value)}
+                              placeholder="Entrez votre badge ID..."
+                              required
+                              autoFocus
+                              className="w-full bg-slate-50 border-2 border-slate-200 focus:border-red-500 outline-none rounded-2xl py-4 px-6 font-bold transition-all text-slate-800 placeholder:text-slate-300"
+                           />
+                           <p className="text-[10px] text-slate-400 italic">Pour des raisons de sécurité, veuillez confirmer votre identité</p>
+                        </div>
+
+                        {/* Boutons */}
+                        <div className="flex gap-3 pt-4">
+                           <button
+                              type="button"
+                              onClick={() => { setShowDeleteStoreModal(false); setDeleteStorePassword(''); }}
+                              className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-[1.75rem] font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all"
+                           >
+                              Annuler
+                           </button>
+                           <button
+                              type="submit"
+                              className="flex-1 bg-red-600 text-white py-4 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+                           >
+                              <Trash2 size={16} />
+                              Supprimer Définitivement
+                           </button>
+                        </div>
+                     </form>
+                  </div>
+               </div>
+            )
+         }
+
          {/* MODAL RIB */}
          {
             showAddRIB && (
@@ -1596,18 +1804,46 @@ ${itemsText}
                         </section>
                         <section className="bg-slate-50 p-6 rounded-[2.5rem] space-y-2">
                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Évaluation</p>
-                           <div className="flex gap-4">
+                           <div className="flex flex-col gap-3">
                               {selectedOrder.storeRating && (
-                                 <div className="flex items-center gap-1.5 text-orange-500 bg-orange-50 px-3 py-1 rounded-full border border-orange-100">
-                                    <Star size={12} fill="currentColor" />
-                                    <span className="text-[10px] font-black">{selectedOrder.storeRating}/5</span>
+                                 <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                       <StoreIcon size={12} className="text-orange-500" />
+                                       <span className="text-[9px] font-black text-slate-500 uppercase">Magasin</span>
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                       {[1, 2, 3, 4, 5].map((star) => (
+                                          <Star
+                                             key={star}
+                                             size={14}
+                                             fill={star <= selectedOrder.storeRating! ? "#f97316" : "none"}
+                                             className={star <= selectedOrder.storeRating! ? "text-orange-500" : "text-slate-300"}
+                                          />
+                                       ))}
+                                       <span className="text-[10px] font-black text-orange-600 ml-1">{selectedOrder.storeRating}/5</span>
+                                    </div>
                                  </div>
                               )}
-                              {selectedOrder.driverRating && (
-                                 <div className="flex items-center gap-1.5 text-blue-500 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">
-                                    <Truck size={12} />
-                                    <span className="text-[10px] font-black">{selectedOrder.driverRating}/5</span>
+                              <div className="space-y-1">
+                                 <div className="flex items-center gap-2">
+                                    <Truck size={12} className="text-blue-500" />
+                                    <span className="text-[9px] font-black text-slate-500 uppercase">Livreur</span>
                                  </div>
+                                 <div className="flex items-center gap-1">
+                                    {[1, 2, 3, 4, 5].map((star) => (
+                                       <Star
+                                          key={star}
+                                          size={14}
+                                          fill={star <= (selectedOrder.driverRating || 0) ? "#eab308" : "none"}
+                                          className={`cursor-pointer transition-transform hover:scale-110 ${star <= (selectedOrder.driverRating || 0) ? "text-yellow-500" : "text-slate-300"}`}
+                                          onClick={() => handleUpdateDriverRating(selectedOrder.id, star)}
+                                       />
+                                    ))}
+                                    <span className="text-[10px] font-black text-yellow-600 ml-1">{selectedOrder.driverRating || 0}/5</span>
+                                 </div>
+                              </div>
+                              {!selectedOrder.storeRating && (
+                                 <p className="text-xs text-slate-400 italic">Aucune note magasin</p>
                               )}
                            </div>
                         </section>
@@ -2386,3 +2622,4 @@ const ImageLightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ im
 };
 
 export default AdminDashboard;
+

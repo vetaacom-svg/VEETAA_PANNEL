@@ -205,7 +205,7 @@ export default function App() {
   };
 
   const fetchOrders = async () => {
-    const { data, error, count } = await supabase.from('orders').select('*', { count: 'exact' }).order('created_at', { ascending: false });
+    const { data, error, count } = await supabase.from('orders').select('*, driver_rating', { count: 'exact' }).order('created_at', { ascending: false });
     if (error) console.error("FETCH ORDERS ERROR:", error);
     console.log(`FETCHED ORDERS: ${data?.length} (Total in DB: ${count})`);
 
@@ -229,7 +229,9 @@ export default function App() {
         storeName: o.store_name,
         assignedDriverId: o.assigned_driver_id,
         statusHistory: o.status_history || [],
-        isArchived: Boolean(o.is_archived)
+        isArchived: Boolean(o.is_archived),
+        storeRating: o.store_rating ? Number(o.store_rating) : undefined,
+        driverRating: o.driver_rating ? Number(o.driver_rating) : undefined
       }));
       setOrders(mappedOrders);
     }
