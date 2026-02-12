@@ -1,0 +1,5 @@
+                  </div>
+
+               {/* FINANCE (RESTAURÉE) */}
+               {activeTab === 'FINANCE' && (
+                  <div className="space-y-8 animate-in slide-in-from-bottom-6">

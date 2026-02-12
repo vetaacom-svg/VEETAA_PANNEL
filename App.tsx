@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
 import { View, CategoryID, Store, CartItem, Order, Product, UserProfile, OrderStatus, Language, Driver, Announcement, RIB, SupportInfo } from './types';
 import { CATEGORIES, MOCK_STORES, TRANSLATIONS } from './constants';
@@ -23,6 +22,7 @@ const Help = React.lazy(() => import('./views/Help'));
 const ProductOrderView = React.lazy(() => import('./views/ProductOrderView'));
 const AdminDashboard = React.lazy(() => import('./views/AdminDashboard'));
 const StoreDetail = React.lazy(() => import('./views/StoreDetail'));
+const SupportPage = React.lazy(() => import('./views/SupportPage'));
 const AdminLogin = React.lazy(() => import('./views/AdminLogin'));
 
 const LoadingScreen = () => (
@@ -226,7 +226,7 @@ export default function App() {
   };
 
   const fetchOrders = async () => {
-    const { data, error, count } = await supabase.from('orders').select('*, driver_rating', { count: 'exact' }).order('created_at', { ascending: false });
+    const { data, error, count } = await supabase.from('orders').select('*, driver_rating', { count: 'exact' }).order('created_at', { ascending: false }).range(0, 9999);
     if (error) console.error("FETCH ORDERS ERROR:", error);
     console.log(`FETCHED ORDERS: ${data?.length} (Total in DB: ${count})`);
 
@@ -242,7 +242,7 @@ export default function App() {
         paymentReceiptImage: o.payment_receipt_base64,
         prescription_base64: o.prescription_base64,
         payment_receipt_base64: o.payment_receipt_base64,
-        total: o.total_products,
+        total: o.total_final,
         status: o.status,
         paymentMethod: o.payment_method,
         timestamp: new Date(o.created_at).getTime(),
@@ -417,6 +417,19 @@ export default function App() {
     return (
       <Suspense fallback={<LoadingScreen />}>
         <AdminLogin onLoginSuccess={() => setIsAdminLogged(true)} />
+      </Suspense>
+    );
+  }
+
+  if (view === 'SUPPORT') {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <SupportPage
+          onBack={() => setView('HOME')}
+          driverId={user?.id || ''}
+          driverName={user?.fullName}
+          driverPhone={user?.phone}
+        />
       </Suspense>
     );
   }

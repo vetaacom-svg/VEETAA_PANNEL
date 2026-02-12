@@ -1,7 +1,7 @@
 
 export type Language = 'fr' | 'ar' | 'en';
 
-export type View = 'WELCOME' | 'LOGIN' | 'SIGNUP' | 'OTP_VERIFICATION' | 'PERMISSIONS' | 'HOME' | 'CATEGORY' | 'STORE' | 'CHECKOUT' | 'PAYMENT' | 'CONFIRMATION' | 'FAVORITES' | 'SETTINGS' | 'TRACKING' | 'HISTORY' | 'HELP' | 'PRODUCT_ORDER' | 'ADMIN_PANEL';
+export type View = 'WELCOME' | 'HOME' | 'CATEGORY_DETAIL' | 'CHECKOUT' | 'CONFIRMATION' | 'LOGIN' | 'SIGNUP' | 'OTP_VERIFICATION' | 'PERMISSIONS' | 'FAVORITES' | 'SETTINGS' | 'TRACKING' | 'HISTORY' | 'HELP' | 'PRODUCT_ORDER' | 'ADMIN_PANEL' | 'STORE_DETAIL' | 'ADMIN_LOGIN' | 'SUPPORT';
 
 export enum CategoryID {
   FOOD = 'food',
@@ -45,7 +45,10 @@ export interface Store {
   delivery_fee?: number;
   is_deleted?: boolean;
   is_featured?: boolean;
+  is_new?: boolean;
   has_products?: boolean;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Category {
@@ -164,4 +167,26 @@ export interface SupportInfo {
   id?: number;
   phone: string;
   email: string;
+}
+
+
+export interface SupportTicket {
+  id: string;
+  driver_id: string;
+  driver_name: string;
+  driver_phone: string;
+  description: string;
+  status: 'open' | 'in_progress' | 'resolved';
+  created_at: string;
+  admin_reply?: string;
+  responded_at?: string;
+  subject?: string;
+  priority?: 'low' | 'medium' | 'high';
+}
+export interface SupportMessage {
+  id: string;
+  ticket_id: string;
+  sender_type: 'admin' | 'driver';
+  message: string;
+  created_at: string;
 }
