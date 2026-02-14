@@ -30,24 +30,27 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
   return (
     <div className="w-full h-full relative">
       <MapContainer center={INITIAL_CENTER} zoom={13} scrollWheelZoom={true} className="h-full w-full">
-        <MapController targetPos={activeStore ? [activeStore.lat, activeStore.lng] : null} />
+        <MapController targetPos={activeStore && activeStore.lat && activeStore.lng ? [activeStore.lat, activeStore.lng] : null} />
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        
+
         {/* MAGASINS */}
-        {stores.map(store => (
-          <Marker key={store.id} position={[store.lat, store.lng]} icon={StoreIcon}>
-            <Popup>
-              <div className="p-2 min-w-[180px]">
-                <h3 className="font-bold text-red-600 text-base">{store.name}</h3>
-                <p className="text-[10px] text-gray-400 font-mono">ID: {store.id}</p>
-                <div className="mt-2 text-xs border-t pt-2 space-y-1">
-                  <p><b>Type:</b> {store.type}</p>
-                  <p className="text-gray-500 italic">{store.address}</p>
+        {stores.map(store => {
+          if (!store.lat || !store.lng) return null;
+          return (
+            <Marker key={store.id} position={[store.lat, store.lng]} icon={StoreIcon}>
+              <Popup>
+                <div className="p-2 min-w-[180px]">
+                  <h3 className="font-bold text-red-600 text-base">{store.name}</h3>
+                  <p className="text-[10px] text-gray-400 font-mono">ID: {store.id}</p>
+                  <div className="mt-2 text-xs border-t pt-2 space-y-1">
+                    <p><b>Type:</b> {store.type}</p>
+                    <p className="text-gray-500 italic">{store.address}</p>
+                  </div>
                 </div>
-              </div>
-            </Popup>
-          </Marker>
-        ))}
+              </Popup>
+            </Marker>
+          );
+        })}
 
         {/* LIVREURS */}
         {drivers.map(driver => {
@@ -76,12 +79,12 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
                 <h3 className="font-bold text-indigo-700 text-base">{user.name}</h3>
                 <p className="text-[10px] text-gray-400 font-mono">ID CLIENT: {user.id}</p>
                 <div className="mt-2 text-xs border-t pt-2">
-                   {user.isOrdering ? (
-                     <div className="bg-green-50 p-2 rounded border border-green-200 text-center">
-                        <p className="text-[9px] font-bold text-green-600 uppercase">Commande active</p>
-                        <p className="font-black text-green-900">N° {orders.find(o => o.userId === user.id)?.id}</p>
-                     </div>
-                   ) : <p className="text-gray-400 italic">Aucune commande</p>}
+                  {user.isOrdering ? (
+                    <div className="bg-green-50 p-2 rounded border border-green-200 text-center">
+                      <p className="text-[9px] font-bold text-green-600 uppercase">Commande active</p>
+                      <p className="font-black text-green-900">N° {orders.find(o => o.userId === user.id)?.id}</p>
+                    </div>
+                  ) : <p className="text-gray-400 italic">Aucune commande</p>}
                 </div>
               </div>
             </Popup>
@@ -89,7 +92,7 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
         ))}
 
         {/* TRACÉS LOGISTIQUES */}
-        {selectedOrder && activeUser && activeStore && (
+        {selectedOrder && activeUser && activeStore && activeStore.lat && activeStore.lng && (
           <>
             <Polyline positions={[[activeStore.lat, activeStore.lng], [activeUser.lat, activeUser.lng]]} color="#22c55e" dashArray="10, 10" weight={2} />
             {activeDriver && <Polyline positions={[[activeDriver.lat, activeDriver.lng], [activeStore.lat, activeStore.lng]]} color="#ef4444" weight={3} />}

@@ -2,15 +2,50 @@
 import React, { useState, useEffect } from 'react';
 import LiveMap from './components/LiveMap';
 import Sidebar from './components/Sidebar';
-import { MOCK_STORES, MOCK_DRIVERS, MOCK_USERS, INITIAL_CENTER } from './constants';
+import { MOCK_DRIVERS, MOCK_USERS, INITIAL_CENTER } from './constants';
 import { Store, Driver, User, Order } from './types';
+import { supabase } from '../supabaseClient';
 
 const App: React.FC = () => {
-  const [stores, setStores] = useState<Store[]>(MOCK_STORES);
+  const [stores, setStores] = useState<Store[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>(MOCK_DRIVERS);
   const [users, setUsers] = useState<User[]>(MOCK_USERS);
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+
+  // CHARGER LES VRAIS STORES DEPUIS SUPABASE
+  useEffect(() => {
+    const fetchStores = async () => {
+      console.log('🔍 Chargement des stores depuis Supabase...');
+      const { data, error } = await supabase
+        .from('stores')
+        .select('id, name, latitude, longitude, category_id, image_url')
+        .eq('is_active', true);
+
+      if (error) {
+        console.error('❌ Erreur chargement stores:', error);
+        return;
+      }
+
+      if (data) {
+        console.log(`✅ ${data.length} stores chargés:`, data);
+        const formattedStores: Store[] = data.map(store => ({
+          id: store.id,
+          name: store.name,
+          lat: store.latitude || null,
+          lng: store.longitude || null,
+          type: store.category_id || 'restaurant',
+          address: 'Casablanca, Maroc'
+        }));
+        setStores(formattedStores);
+        console.log('📍 Stores formatés pour la carte:', formattedStores);
+      } else {
+        console.log('⚠️ Aucun store trouvé');
+      }
+    };
+
+    fetchStores();
+  }, []);
 
   // SIMULATION DU MOUVEMENT TEMPS RÉEL (1s)
   useEffect(() => {
@@ -49,8 +84,8 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-screen bg-slate-100 overflow-hidden font-sans antialiased text-slate-900">
-      <Sidebar 
-        orders={orders} users={users} stores={stores} drivers={drivers} 
+      <Sidebar
+        orders={orders} users={users} stores={stores} drivers={drivers}
         selectedOrderId={selectedOrderId} onSelectOrder={setSelectedOrderId}
         onAddEntity={handleAddEntity} onSimulateOrder={handleSimulateOrder}
       />
@@ -58,9 +93,9 @@ const App: React.FC = () => {
         <LiveMap stores={stores} drivers={drivers} users={users} orders={orders} selectedOrderId={selectedOrderId} />
         <div className="absolute top-6 left-6 z-[1000] flex gap-3">
           <div className="bg-white/95 px-4 py-2 rounded-full shadow-lg border border-slate-200 flex items-center gap-3">
-             <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> <span className="text-[10px] font-bold uppercase">{orders.length} Commandes</span></div>
-             <div className="w-px h-3 bg-slate-200"></div>
-             <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-slate-900 rounded-full"></span> <span className="text-[10px] font-bold uppercase">{drivers.length} Livreurs</span></div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> <span className="text-[10px] font-bold uppercase">{orders.length} Commandes</span></div>
+            <div className="w-px h-3 bg-slate-200"></div>
+            <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-slate-900 rounded-full"></span> <span className="text-[10px] font-bold uppercase">{drivers.length} Livreurs</span></div>
           </div>
         </div>
       </main>

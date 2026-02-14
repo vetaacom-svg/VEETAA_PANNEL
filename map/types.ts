@@ -2,8 +2,8 @@
 export interface Store {
   id: string;
   name: string;
-  lat: number;
-  lng: number;
+  lat?: number | null;
+  lng?: number | null;
   type: 'restaurant' | 'grocery' | 'pharmacy';
   address: string;
 }

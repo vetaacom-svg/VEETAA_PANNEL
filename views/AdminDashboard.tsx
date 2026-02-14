@@ -266,8 +266,7 @@ const LogisticsSidebar: React.FC<{
                      ) : (
                         <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
                            {stores.map(store => {
-                              const pos = store.maps_url || store.mapsUrl;
-                              const hasPos = pos && pos.includes('query=');
+                              const hasCoords = store.latitude && store.longitude;
 
                               return (
                                  <div key={store.id} className="flex items-center justify-between p-2 hover:bg-slate-50 rounded-xl transition-colors border border-transparent hover:border-slate-100">
@@ -281,9 +280,18 @@ const LogisticsSidebar: React.FC<{
                                        </div>
                                        <div>
                                           <p className="text-[11px] font-bold text-slate-800 leading-tight">{store.name}</p>
-                                          <p className={`text-[9px] font-black uppercase ${hasPos ? 'text-green-500' : 'text-slate-300'}`}>
-                                             {hasPos ? 'Lié' : 'Non Lié'}
-                                          </p>
+                                          {hasCoords ? (
+                                             <div className="flex gap-1 mt-0.5">
+                                                <span className="text-[9px] font-mono font-bold bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-200">
+                                                   X: {Number(store.latitude).toFixed(4)}
+                                                </span>
+                                                <span className="text-[9px] font-mono font-bold bg-green-50 text-green-700 px-1.5 py-0.5 rounded border border-green-200">
+                                                   Y: {Number(store.longitude).toFixed(4)}
+                                                </span>
+                                             </div>
+                                          ) : (
+                                             <p className="text-[9px] font-black uppercase text-slate-300">Non Lié</p>
+                                          )}
                                        </div>
                                     </div>
                                     <button
@@ -418,10 +426,15 @@ const MapComponent: React.FC<{
    const activeDriver = selectedOrder?.assignedDriverId ? drivers.find(d => d.id === selectedOrder.assignedDriverId) : null;
 
    const getStorePos = (s: Store): [number, number] | null => {
+      // Priorité aux coordonnées stockées en base
+      if (s.latitude && s.longitude) return [Number(s.latitude), Number(s.longitude)];
       if (s.lat && s.lng) return [s.lat, s.lng];
-      const lat = s.maps_url?.match(/query=([-.\d]+),([-.\d]+)/)?.[1] || s.mapsUrl?.match(/query=([-.\d]+),([-.\d]+)/)?.[1];
-      const lng = s.maps_url?.match(/query=([-.\d]+),([-.\d]+)/)?.[2] || s.mapsUrl?.match(/query=([-.\d]+),([-.\d]+)/)?.[2];
-      return lat && lng ? [parseFloat(lat), parseFloat(lng)] : null;
+
+      // Fallback: tentative d'extraction depuis l'URL maps (moins fiable mais utile pour legacy)
+      const latMatch = s.maps_url?.match(/@(-?\d+\.?\d*),(-?\d+\.?\d+)/) || s.maps_url?.match(/[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d+)/) || s.mapsUrl?.match(/query=([-.\d]+),([-.\d]+)/);
+      if (latMatch) return [parseFloat(latMatch[1]), parseFloat(latMatch[2])];
+
+      return null;
    };
 
    // Extraction de la position du client depuis l'URL Google Maps ou les notes
@@ -878,12 +891,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
 
    // 1s Update frequency for interpolation (especially for MAPS tab)
+   // REMOVED: Managed by Realtime subscription in App.tsx to prevent fetch storm
    useEffect(() => {
-      if (activeTab !== 'MAPS') return;
-      const interval = setInterval(() => {
-         onBack(); // Triggers data refresh in parent
-      }, 1000);
-      return () => clearInterval(interval);
+      /*
+     if (activeTab !== 'MAPS') return;
+     const interval = setInterval(() => {
+        onBack(); // Triggers data refresh in parent
+     }, 1000);
+     return () => clearInterval(interval);
+     */
    }, [activeTab]);
    const [dbCategories, setDbCategories] = useState<any[]>([]);
 
@@ -1106,9 +1122,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [productImagesPreviews, setProductImagesPreviews] = useState<string[]>([]);
    const [hasProductsEnabled, setHasProductsEnabled] = useState(false);
    const [productImagePreview, setProductImagePreview] = useState<string | null>(null);
+   const [extractedCoordinates, setExtractedCoordinates] = useState<{ lat: number; lng: number } | null>(null);
    const [showAddAnnouncement, setShowAddAnnouncement] = useState(false);
    const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
    const [announcementImagePreview, setAnnouncementImagePreview] = useState<string | null>(null);
+   const [mapsUrlInput, setMapsUrlInput] = useState('');
+   const [extractionError, setExtractionError] = useState<string | null>(null);
+
+   // Effet pour initialiser les coordonnées quand on édite un store
+   useEffect(() => {
+      if (editingStore) {
+         setMapsUrlInput(editingStore.maps_url || '');
+         if (editingStore.latitude && editingStore.longitude) {
+            setExtractedCoordinates({ lat: editingStore.latitude, lng: editingStore.longitude });
+         } else {
+            setExtractedCoordinates(null);
+         }
+      } else {
+         setMapsUrlInput('');
+         setExtractedCoordinates(null);
+         setExtractionError(null);
+      }
+
+      // Initialiser aussi les images produits si elles existent (pour éviter de les perdre)
+      if (editingStore && editingStore.has_products) {
+         setHasProductsEnabled(true);
+         // Ici on devrait charger les images, mais comme elles sont liées aux produits, c'est plus complexe.
+         // Pour l'instant on garde juste l'état activé.
+      } else {
+         setHasProductsEnabled(false);
+      }
+   }, [editingStore]);
 
    // --- LOGO (pour les PDF) ---
    const logo = "LOGO.png"; // Sera géré par le chemin relatif ou base64
@@ -1117,6 +1161,77 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const copyToClipboard = (text: string, message?: string) => {
       navigator.clipboard.writeText(text);
       alert(message || ("Copié : " + text));
+   };
+
+   // Extract coordinates from Google Maps URL
+   const extractCoordinatesFromUrl = (url: string) => {
+      if (!url) {
+         setExtractedCoordinates(null);
+         return;
+      }
+
+      // Vérifier si c'est une URL raccourcie
+      if (url.includes('goo.gl') || url.includes('maps.app.goo.gl')) {
+         setExtractionError('URL raccourcie détectée ! Ouvrez ce lien dans votre navigateur, puis copiez l\'URL complète.');
+         setExtractedCoordinates(null);
+         return;
+      }
+
+      setExtractionError(null);
+      extractFromFinalUrl(url);
+   };
+
+   const extractFromFinalUrl = async (url: string) => {
+      // Pattern 1: @lat,lng,zoom (most common)
+      const pattern1 = /@(-?\d+\.?\d*),(-?\d+\.?\d+)/;
+      // Pattern 2: query parameter format
+      const pattern2 = /[?&]q=(-?\d+\.?\d*),(-?\d+\.?\d+)/;
+      // Pattern 3: ll parameter
+      const pattern3 = /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d+)/;
+      // Pattern 4: !3d (latitude) !4d (longitude) - format alternatif
+      const pattern4 = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d+)/;
+
+      let match = url.match(pattern1) || url.match(pattern2) || url.match(pattern3) || url.match(pattern4);
+
+      if (match) {
+         const lat = parseFloat(match[1]);
+         const lng = parseFloat(match[2]);
+         setExtractedCoordinates({ lat, lng });
+
+         // Si on édite un magasin existant, sauvegarder automatiquement les coordonnées
+         if (editingStore) {
+            const { error } = await supabase
+               .from('stores')
+               .update({
+                  latitude: lat,
+                  longitude: lng,
+                  maps_url: url
+               })
+               .eq('id', editingStore.id);
+
+            if (error) {
+               setExtractionError('Erreur lors de la sauvegarde : ' + error.message);
+            } else {
+               // Succès - les coordonnées sont sauvegardées
+               setExtractionError(null);
+
+               // Mettre à jour l'état local sans recharger la page
+               if (setStores) {
+                  setStores(prevStores => prevStores.map(s =>
+                     s.id === editingStore.id
+                        ? { ...s, latitude: lat, longitude: lng, maps_url: url }
+                        : s
+                  ));
+               }
+
+               // Mettre à jour le magasin en cours d'édition pour refléter les changements
+               setEditingStore(prev => prev ? { ...prev, latitude: lat, longitude: lng, maps_url: url } : null);
+            }
+         }
+      } else {
+         setExtractedCoordinates(null);
+         setExtractionError('Impossible d\'extraire les coordonnées de cette URL.');
+      }
    };
 
 
@@ -1774,7 +1889,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             is_featured: formData.get('is_featured') === 'on',
             is_new: formData.get('is_new') === 'on',
             has_products: formData.get('has_products') === 'on',
-            description: formData.get('description') as string
+            description: formData.get('description') as string,
+            latitude: extractedCoordinates?.lat || null,
+            longitude: extractedCoordinates?.lng || null
          };
 
          if (editingStore) {
@@ -3037,6 +3154,17 @@ ${itemsText}
                                  <div className="flex-1">
                                     <h4 className="font-black text-lg">{s.name}</h4>
                                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{s.category_id}</p>
+                                    {(s.latitude && s.longitude) ? (
+                                       <div className="flex items-center gap-1 mt-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg w-fit">
+                                          <MapPin size={10} />
+                                          <span className="text-[9px] font-mono font-bold">{s.latitude.toFixed(4)}, {s.longitude.toFixed(4)}</span>
+                                       </div>
+                                    ) : (
+                                       <div className="flex items-center gap-1 mt-1 text-slate-400 bg-slate-50 px-2 py-1 rounded-lg w-fit">
+                                          <MapPin size={10} />
+                                          <span className="text-[9px] font-mono">Pas de coordonnées</span>
+                                       </div>
+                                    )}
                                  </div>
                                  <div className="flex flex-col gap-2">
                                     <button onClick={() => handleToggleStoreStatus(s.id, 'is_open', !!s.is_open)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${s.is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
@@ -4228,7 +4356,7 @@ ${itemsText}
             showAddPartner && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                   <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddPartner(false)}></div>
-                  <div className="relative bg-white w-full max-w-xl rounded-[3rem] shadow-2xl overflow-hidden">
+                  <div className="relative bg-white w-full max-w-xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingStore ? 'Modifier' : 'Nouveau'} Partenaire</h3>
                         <button onClick={() => setShowAddPartner(false)} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
@@ -4398,7 +4526,55 @@ ${itemsText}
                         </div>
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Google Maps URL</label>
-                           <input name="maps_url" defaultValue={editingStore?.maps_url} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" />
+                           <div className="flex gap-2">
+                              <input
+                                 name="maps_url"
+                                 value={mapsUrlInput}
+                                 onChange={(e) => setMapsUrlInput(e.target.value)}
+                                 className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all"
+                                 placeholder="https://maps.google.com/..."
+                              />
+                              <button
+                                 type="button"
+                                 onClick={() => extractCoordinatesFromUrl(mapsUrlInput)}
+                                 className="bg-slate-900 text-white px-6 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-orange-600 transition-colors"
+                              >
+                                 Extraire
+                              </button>
+                           </div>
+
+                           {extractionError && (
+                              <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-3 mt-2">
+                                 <div className="p-2 bg-red-500 text-white rounded-lg">
+                                    <AlertCircle size={16} />
+                                 </div>
+                                 <div className="flex-1">
+                                    <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Erreur d'extraction</p>
+                                    <p className="text-xs text-red-700 mt-1">{extractionError}</p>
+                                 </div>
+                              </div>
+                           )}
+
+                           {extractedCoordinates && (
+                              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center gap-3">
+                                 <div className="p-2 bg-emerald-500 text-white rounded-lg">
+                                    <MapPin size={16} />
+                                 </div>
+                                 <div className="flex-1">
+                                    <p className="text-[9px] font-black text-emerald-600 uppercase tracking-widest">Coordonnées Extraites</p>
+                                    <div className="flex gap-4 mt-1">
+                                       <div>
+                                          <span className="text-[8px] text-emerald-500 font-bold uppercase">Latitude (X)</span>
+                                          <p className="text-sm font-black text-emerald-700">{extractedCoordinates.lat}</p>
+                                       </div>
+                                       <div>
+                                          <span className="text-[8px] text-emerald-500 font-bold uppercase">Longitude (Y)</span>
+                                          <p className="text-sm font-black text-emerald-700">{extractedCoordinates.lng}</p>
+                                       </div>
+                                    </div>
+                                 </div>
+                              </div>
+                           )}
                         </div>
                         <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl">Enregistrer la Marque</button>
                      </form>

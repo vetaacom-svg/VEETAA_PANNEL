@@ -49,6 +49,8 @@ export interface Store {
   has_products?: boolean;
   lat?: number;
   lng?: number;
+  latitude?: number;
+  longitude?: number;
   sub_category?: string;
 }
 

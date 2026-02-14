@@ -107,6 +107,7 @@ export default function App() {
     initApp();
 
     // Abonnement Temps Réel aux commandes
+    // Abonnement Temps Réel aux commandes
     const ordersSubscription = supabase
       .channel('public:orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
@@ -114,18 +115,29 @@ export default function App() {
       })
       .subscribe();
 
+    // Debounce pour éviter les mises à jour trop fréquentes (ex: positions livreurs)
+    let refreshTimeout: NodeJS.Timeout;
+    const debouncedRefresh = () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout);
+      refreshTimeout = setTimeout(() => {
+        console.log("Realtime: Refreshing global data due to changes");
+        fetchData();
+      }, 2000);
+    };
+
     // Abonnement Temps Réel aux autres tables (pour l'admin)
     const dataSubscription = supabase
       .channel('public:data')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'stores' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_categories' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => fetchData())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stores' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sub_categories' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, debouncedRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, debouncedRefresh)
       .subscribe();
 
     return () => {
+      if (refreshTimeout) clearTimeout(refreshTimeout);
       supabase.removeChannel(ordersSubscription);
       supabase.removeChannel(dataSubscription);
     };
@@ -185,6 +197,8 @@ export default function App() {
         delivery_time_min: s.delivery_time_min,
         delivery_fee: s.delivery_fee,
         maps_url: s.maps_url,
+        latitude: s.latitude ? Number(s.latitude) : null,
+        longitude: s.longitude ? Number(s.longitude) : null,
         products: productsRes.data
           .filter((p: any) => p.store_id === s.id)
           .map((p: any) => ({
@@ -222,7 +236,7 @@ export default function App() {
       setSupportInfo(supportInfoData[0]);
       setSupportNumber(supportInfoData[0].phone);
     }
-    await fetchOrders();
+    // await fetchOrders(); // Removed to prevent infinite loop and decouple updates
   };
 
   const showNotification = (title: string, body: string) => {
@@ -234,9 +248,14 @@ export default function App() {
     try {
       const { data, error } = await supabase
         .from('orders')
-        .select('*, driver_rating')
+        .select(`
+          id, created_at, status, customer_name, phone, delivery_lat, delivery_lng, 
+          items, total_products, total_final, payment_method, category_name, store_name, 
+          assigned_driver_id, status_history, is_archived, store_rating, driver_rating, 
+          text_order_notes, delivery_note
+        `)
         .order('created_at', { ascending: false })
-        .range(0, 299); // Significant reduction to prevent timeouts and payload bloat
+        .limit(100); // Réduit pour éviter les timeouts
 
       if (error) {
         console.error("FETCH ORDERS ERROR:", error);
