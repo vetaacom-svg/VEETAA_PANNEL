@@ -96,6 +96,7 @@ export default function App() {
       const adminToken = localStorage.getItem('veetaa_admin_token');
       if (adminToken) {
         setIsAdminLogged(true);
+        fetchOrders();
       }
 
       const savedFavs = localStorage.getItem('veetaa_favorites');
@@ -142,6 +143,12 @@ export default function App() {
       supabase.removeChannel(dataSubscription);
     };
   }, [user?.isAdmin]);
+
+  useEffect(() => {
+    if (isAdminLogged) {
+      fetchOrders();
+    }
+  }, [isAdminLogged]);
 
   const fetchData = async () => {
     console.log("REFRESHING ALL DATA...");
