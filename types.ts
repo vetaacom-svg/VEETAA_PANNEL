@@ -18,11 +18,13 @@ export interface Product {
   name: string;
   price: number;
   image: string; // Image principale
-  images?: string[]; // Images additionnelles
+  images?: string[]; // Images additionnelles (legacy)
+  product_images?: string[]; // Images additionnelles (DB column)
   storeName?: string;
   category?: CategoryID;
   options?: string[];
   description?: string;
+  price_editable?: boolean;
 }
 
 export interface Store {

@@ -849,6 +849,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [viewingImage, setViewingImage] = useState<string | null>(null);
    const [currentAdmin, setCurrentAdmin] = useState<any>(null);
    const [showProfileModal, setShowProfileModal] = useState(false);
+   const [productAdditionalImages, setProductAdditionalImages] = useState<string[]>([]);
 
    useEffect(() => {
       const adminData = localStorage.getItem('veetaa_admin_token');
@@ -1338,8 +1339,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const formData = new FormData(form);
 
       let productImageURL = editingProduct ? (editingProduct as any).image : (formData.get('image_url') as string);
+      let additionalImageURLs: string[] = [];
 
       try {
+         // Upload Main Image
          if (productImagePreview && productImagePreview.startsWith('data:')) {
             const blob = await dataUrlToBlob(productImagePreview);
             const fileName = `product_${Date.now()}.png`;
@@ -1353,12 +1356,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }
          }
 
+         // Upload Additional Images
+         if (productAdditionalImages.length > 0) {
+            const existingImages = productAdditionalImages.filter(img => !img.startsWith('data:'));
+            additionalImageURLs = [...existingImages];
+
+            const newImages = productAdditionalImages.filter(img => img.startsWith('data:'));
+            for (const imgBase64 of newImages) {
+               const blob = await dataUrlToBlob(imgBase64);
+               const fileName = `prod_extra_${Date.now()}_${Math.random().toString(36).substring(7)}.png`;
+               const { data, error: uploadError } = await supabase.storage.from('products').upload(fileName, blob);
+               if (!uploadError && data) {
+                  const publicUrl = supabase.storage.from('products').getPublicUrl(fileName).data.publicUrl;
+                  additionalImageURLs.push(publicUrl);
+               }
+            }
+         }
+
+
+
          const prodData = {
             name: formData.get('name') as string,
             price: parseFloat(formData.get('price') as string),
             store_id: formData.get('store_id') as string,
             image_url: productImageURL,
-            description: formData.get('description') as string
+            description: formData.get('description') as string,
+            price_editable: formData.get('price_editable') === 'on',
+            product_images: additionalImageURLs
          };
 
          if (editingProduct) {
@@ -1368,6 +1392,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                setShowAddProduct(false);
                setEditingProduct(null);
                setProductImagePreview(null);
+               setProductAdditionalImages([]);
                onBack();
             }
          } else {
@@ -1376,6 +1401,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             else {
                setShowAddProduct(false);
                setProductImagePreview(null);
+               setProductAdditionalImages([]);
                onBack();
             }
          }
@@ -3198,7 +3224,13 @@ ${itemsText}
                      {filteredProducts.map((p, idx) => (
                         <div key={p.id || idx} className="bg-white rounded-[2.5rem] border p-4 group hover:shadow-xl transition-all relative overflow-hidden">
                            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                              <button onClick={() => { setEditingProduct(p); setShowAddProduct(true); }} className="p-2 bg-white/90 backdrop-blur-sm text-slate-600 rounded-xl shadow-lg hover:text-orange-600"><Edit3 size={16} /></button>
+                              <button onClick={() => {
+                                 setEditingProduct(p);
+                                 setProductImagePreview(null);
+                                 setProductAdditionalImages(p.product_images || p.images || []);
+                                 setShowAddProduct(true);
+                              }} className="p-2 bg-white/90 backdrop-blur-sm text-slate-600 rounded-xl shadow-lg hover:text-orange-600"><Edit3 size={16} /></button>
+
                               <button onClick={() => handleDeleteProduct(p.id)} className="p-2 bg-white/90 backdrop-blur-sm text-red-500 rounded-xl shadow-lg hover:bg-red-50"><Trash2 size={16} /></button>
                            </div>
                            <img src={p.image} loading="lazy" className="w-full h-40 object-cover rounded-[1.75rem] mb-4" />
@@ -4294,7 +4326,7 @@ ${itemsText}
             showAddProduct && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                   <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddProduct(false)}></div>
-                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden">
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingProduct ? 'Modifier' : 'Nouveau'} Produit</h3>
                         <button onClick={() => setShowAddProduct(false)} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
@@ -4340,6 +4372,77 @@ ${itemsText}
                               </select>
                            </div>
                         </div>
+
+                        <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                           <div className="flex flex-col">
+                              <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Prix Editable</span>
+                              <span className="text-[9px] font-bold text-slate-400">Permettre aux livreurs de modifier le prix</span>
+                           </div>
+                           <div className="bauble_box ml-auto">
+                              <input
+                                 className="bauble_input"
+                                 id="price_editable_switch"
+                                 name="price_editable"
+                                 type="checkbox"
+                                 defaultChecked={editingProduct?.price_editable}
+                              />
+                              <label className="bauble_label" htmlFor="price_editable_switch">Toggle</label>
+                           </div>
+                        </div>
+
+                        {/* Additional Images Gallery */}
+                        <div className="space-y-4 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
+                           <div className="flex items-center justify-between">
+                              <div>
+                                 <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Galerie Photos</h4>
+                                 <p className="text-[9px] text-slate-400 font-bold mt-1">Ajoutez jusqu'à 3 images supplémentaires</p>
+                              </div>
+                              <div className="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-[9px] font-black">
+                                 {productAdditionalImages.length}/3
+                              </div>
+                           </div>
+
+                           <div className="grid grid-cols-4 gap-3">
+                              {productAdditionalImages.map((preview, index) => (
+                                 <div key={index} className="relative group aspect-square">
+                                    <div className="w-full h-full bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                                       <img src={preview} className="w-full h-full object-cover" alt={`Extra ${index + 1}`} />
+                                    </div>
+                                    <button
+                                       type="button"
+                                       onClick={() => setProductAdditionalImages(prev => prev.filter((_, i) => i !== index))}
+                                       className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                    >
+                                       <X size={10} />
+                                    </button>
+                                 </div>
+                              ))}
+
+                              {productAdditionalImages.length < 3 && (
+                                 <label className="w-full aspect-square bg-white border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition-all group">
+                                    <Plus size={16} className="text-slate-300 group-hover:text-orange-400 transition-colors" />
+                                    <input
+                                       type="file"
+                                       className="hidden"
+                                       accept="image/*"
+                                       onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file && productAdditionalImages.length < 3) {
+                                             const reader = new FileReader();
+                                             reader.onloadend = () => {
+                                                if (typeof reader.result === 'string') {
+                                                   setProductAdditionalImages(prev => [...prev, reader.result as string]);
+                                                }
+                                             };
+                                             reader.readAsDataURL(file);
+                                          }
+                                       }}
+                                    />
+                                 </label>
+                              )}
+                           </div>
+                        </div>
+
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Description</label>
                            <textarea name="description" defaultValue={editingProduct?.description} rows={3} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all resize-none" />

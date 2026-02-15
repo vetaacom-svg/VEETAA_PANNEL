@@ -153,6 +153,7 @@ CREATE TABLE public.products (
   is_available boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   product_images ARRAY DEFAULT '{}'::text[],
+  price_editable boolean DEFAULT false,
   CONSTRAINT products_pkey PRIMARY KEY (id),
   CONSTRAINT products_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
 );
