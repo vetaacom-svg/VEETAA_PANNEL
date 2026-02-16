@@ -64,6 +64,7 @@ CREATE TABLE public.drivers (
   documents jsonb DEFAULT '[]'::jsonb,
   average_rating numeric DEFAULT 0,
   total_ratings integer DEFAULT 0,
+  fcm_token text,
   CONSTRAINT drivers_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.favorites (
@@ -139,6 +140,7 @@ CREATE TABLE public.orders (
   phone text,
   is_archived boolean DEFAULT false,
   delivery_note text,
+  store_invoice_base64 text,
   CONSTRAINT orders_pkey PRIMARY KEY (id),
   CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT orders_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
@@ -153,7 +155,7 @@ CREATE TABLE public.products (
   is_available boolean DEFAULT true,
   created_at timestamp with time zone DEFAULT now(),
   product_images ARRAY DEFAULT '{}'::text[],
-  price_editable boolean DEFAULT false,
+  price_editable boolean DEFAULT true,
   CONSTRAINT products_pkey PRIMARY KEY (id),
   CONSTRAINT products_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
 );

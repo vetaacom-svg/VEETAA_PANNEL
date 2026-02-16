@@ -471,13 +471,28 @@ const MapComponent: React.FC<{
 
    return (
       <div className="w-full h-full relative bg-slate-50">
+         <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+            <filter id="street-darkener-admin">
+               <feComponentTransfer>
+                  <feFuncR type="gamma" exponent="1.8" amplitude="0.7" />
+                  <feFuncG type="gamma" exponent="1.8" amplitude="0.7" />
+                  <feFuncB type="gamma" exponent="1.8" amplitude="0.7" />
+               </feComponentTransfer>
+            </filter>
+         </svg>
          <style>{`
              .leaflet-tile {
-                filter: saturate(130%) contrast(110%) !important;
+                filter: url(#street-darkener-admin) brightness(1.05) contrast(1.1) !important;
+             }
+             .leaflet-container {
+                background: #ffffff !important;
              }
              .leaflet-div-icon {
                 background: transparent !important;
                 border: none !important;
+             }
+             .leaflet-control-attribution {
+                display: none !important;
              }
           `}</style>
          <MapContainer
@@ -486,13 +501,13 @@ const MapComponent: React.FC<{
             scrollWheelZoom={true}
             className="h-full w-full"
             style={{ background: '#f8fafc' }}
+            attributionControl={false}
          >
             <MapController targetPos={activeUserPos || (activeStore ? getStorePos(activeStore) : null)} />
             {onMapClick && <MapEventsHandler onMapClick={onMapClick} />}
             <RecenterButton />
             <TileLayer
                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
 
             {/* PREVIEW DU STORE EN COURS DE LIEN */}
@@ -719,7 +734,7 @@ const StatisticsMapComponent: React.FC<{ orders: Order[], drivers: Driver[], use
          attributionControl: false
       }).setView([34.2610, -6.5802], 12);
 
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png').addTo(mapInstance);
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { attribution: '' }).addTo(mapInstance);
       setMap(mapInstance);
 
       initTimeoutRef.current = setTimeout(() => {
@@ -786,6 +801,11 @@ const StatisticsMapComponent: React.FC<{ orders: Order[], drivers: Driver[], use
 
    return (
       <div className="relative w-full h-full rounded-[2rem] overflow-hidden border">
+         <style>{`
+             .leaflet-control-attribution {
+                display: none !important;
+             }
+         `}</style>
          <div ref={containerRef} className="w-full h-full z-0" />
          {orders.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center bg-slate-50/50 backdrop-blur-[2px] z-10 transition-opacity">
@@ -1080,6 +1100,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
    const [driverDocs, setDriverDocs] = useState<DriverDocument[]>([]);
    const [driverWarns, setDriverWarns] = useState(0);
+   const [localDrivers, setLocalDrivers] = useState<Driver[]>(drivers);
+   const [updatingWarnings, setUpdatingWarnings] = useState<Set<string>>(new Set());
 
    useEffect(() => {
       if (editingDriver) {
@@ -1090,6 +1112,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          setDriverWarns(0);
       }
    }, [editingDriver]);
+
+   // Synchronize local drivers with props
+   useEffect(() => {
+      setLocalDrivers(drivers);
+   }, [drivers]);
    const [showAddProduct, setShowAddProduct] = useState(false);
    const [showAddPartner, setShowAddPartner] = useState(false);
    const [editingStore, setEditingStore] = useState<Store | null>(null);
@@ -1122,6 +1149,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [storeImagePreview, setStoreImagePreview] = useState<string | null>(null);
    const [productImagesPreviews, setProductImagesPreviews] = useState<string[]>([]);
    const [hasProductsEnabled, setHasProductsEnabled] = useState(false);
+   // Unified image management - first image is always the main image
    const [productImagePreview, setProductImagePreview] = useState<string | null>(null);
    const [extractedCoordinates, setExtractedCoordinates] = useState<{ lat: number; lng: number } | null>(null);
    const [showAddAnnouncement, setShowAddAnnouncement] = useState(false);
@@ -1516,9 +1544,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    };
 
    const handleUpdateDriverWarns = async (id: string, newVal: number) => {
+      // Optimistic update: update local state immediately
+      setLocalDrivers(prev => prev.map(d => d.id === id ? { ...d, warns: newVal } : d));
+      
+      // Show animation state
+      setUpdatingWarnings(prev => new Set([...prev, id]));
+      
+      // Update database in background
       const { error } = await supabase.from('drivers').update({ warns: newVal }).eq('id', id);
-      if (error) alert("Erreur: " + error.message);
-      else onBack();
+      
+      // Stop animation
+      setTimeout(() => {
+        setUpdatingWarnings(prev => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 600);
+      
+      if (error) {
+         console.error("Erreur lors de la mise à jour:", error);
+         // Revert on error by fetching fresh data
+         setLocalDrivers(drivers);
+      }
    };
 
    const handleToggleStoreStatus = async (id: string, field: 'is_open' | 'is_active', current: boolean) => {
@@ -1973,10 +2021,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       (u.email && u.email.toLowerCase().includes(lowerSearch))
    ), [users, lowerSearch]);
 
-   const filteredDrivers = useMemo(() => drivers.filter(d =>
+   const filteredDrivers = useMemo(() => localDrivers.filter(d =>
       (d.full_name && d.full_name.toLowerCase().includes(lowerSearch)) ||
       (d.phone || '').includes(lowerSearch)
-   ), [drivers, lowerSearch]);
+   ), [localDrivers, lowerSearch]);
 
    const filteredStores = useMemo(() => stores.filter(s =>
       (s.name || '').toLowerCase().includes(lowerSearch) ||
@@ -3105,7 +3153,7 @@ ${itemsText}
                            </thead>
                            <tbody className="divide-y">
                               {filteredDrivers.map(d => (
-                                 <tr key={d.id} className="hover:bg-slate-50">
+                                 <tr key={d.id} className="hover:bg-slate-50 transition-colors">
                                     <td className="px-8 py-5">
                                        <div className="flex items-center gap-3">
                                           <div className="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center font-black">{d.full_name ? d.full_name[0] : '?'}</div>
@@ -3142,11 +3190,23 @@ ${itemsText}
                                           );
                                        })()}
                                     </td>
-                                    <td className="px-8 py-5">
-                                       <div className="flex items-center gap-2">
-                                          <button onClick={() => handleUpdateDriverWarns(d.id, Math.max(0, (d.warns || 0) - 1))} className="p-1 hover:bg-slate-100 rounded">-</button>
-                                          <span className={`font-black ${(d.warns || 0) > 0 ? 'text-red-500' : 'text-slate-400'}`}>{d.warns || 0}</span>
-                                          <button onClick={() => handleUpdateDriverWarns(d.id, (d.warns || 0) + 1)} className="p-1 hover:bg-slate-100 rounded">+</button>
+                                    <td className={`px-8 py-5 transition-all duration-300 ${updatingWarnings.has(d.id) ? 'bg-yellow-50 shadow-lg shadow-yellow-200' : ''}`}>
+                                       <div className="flex items-center gap-2 justify-center">
+                                          <button 
+                                             onClick={() => handleUpdateDriverWarns(d.id, Math.max(0, (d.warns || 0) - 1))} 
+                                             className={`p-1 hover:bg-slate-100 rounded transition-all ${updatingWarnings.has(d.id) ? 'opacity-50' : ''}`}
+                                          >
+                                             -
+                                          </button>
+                                          <div className={`px-3 py-1 rounded-lg font-black transition-all duration-300 ${(d.warns || 0) > 0 ? 'text-red-500 bg-red-50' : 'text-slate-400'} ${updatingWarnings.has(d.id) ? 'scale-125 animate-pulse' : 'scale-100'}`}>
+                                             {d.warns || 0}
+                                          </div>
+                                          <button 
+                                             onClick={() => handleUpdateDriverWarns(d.id, (d.warns || 0) + 1)} 
+                                             className={`p-1 hover:bg-slate-100 rounded transition-all ${updatingWarnings.has(d.id) ? 'opacity-50' : ''}`}
+                                          >
+                                             +
+                                          </button>
                                        </div>
                                     </td>
                                     <td className="px-8 py-5 text-right">
@@ -3217,7 +3277,12 @@ ${itemsText}
                {/* CATALOGUE */}
                {activeTab === 'PRODUCTS' && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-                     <div onClick={() => setShowAddProduct(true)} className="bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 p-8 flex flex-col items-center justify-center gap-3 cursor-pointer">
+                     <div onClick={() => {
+                        setEditingProduct(null);
+                        setProductImagePreview(null);
+                        setProductAdditionalImages([]);
+                        setShowAddProduct(true);
+                     }} className="bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 p-8 flex flex-col items-center justify-center gap-3 cursor-pointer">
                         <Plus size={32} className="text-slate-300" />
                         <span className="font-black text-[10px] text-slate-400 uppercase tracking-widest">Ajouter un produit</span>
                      </div>
@@ -3226,8 +3291,11 @@ ${itemsText}
                            <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                               <button onClick={() => {
                                  setEditingProduct(p);
-                                 setProductImagePreview(null);
-                                 setProductAdditionalImages(p.product_images || p.images || []);
+                                 // Charger l'image principale
+                                 setProductImagePreview(p.image || null);
+                                 // Charger les images additionnelles
+                                 const additionalImages = p.product_images || p.images || [];
+                                 setProductAdditionalImages(additionalImages);
                                  setShowAddProduct(true);
                               }} className="p-2 bg-white/90 backdrop-blur-sm text-slate-600 rounded-xl shadow-lg hover:text-orange-600"><Edit3 size={16} /></button>
 
@@ -4326,36 +4394,17 @@ ${itemsText}
             showAddProduct && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                   <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddProduct(false)}></div>
-                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
+                  <div className="relative bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingProduct ? 'Modifier' : 'Nouveau'} Produit</h3>
-                        <button onClick={() => setShowAddProduct(false)} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
+                        <button onClick={() => {
+                           setShowAddProduct(false);
+                           setEditingProduct(null);
+                           setProductImagePreview(null);
+                           setProductAdditionalImages([]);
+                        }} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
                      </header>
                      <form key={editingProduct?.id || 'new-product'} onSubmit={handleCreateProduct} className="p-8 space-y-6">
-                        <div className="flex justify-center mb-6">
-                           <div className="relative group">
-                              <div className="w-24 h-24 bg-slate-100 rounded-3xl overflow-hidden border-4 border-white shadow-xl">
-                                 {productImagePreview || editingProduct?.image ? (
-                                    <img src={productImagePreview || editingProduct?.image} className="w-full h-full object-cover" />
-                                 ) : (
-                                    <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                       <ImageIcon size={40} />
-                                    </div>
-                                 )}
-                              </div>
-                              <label className="absolute -bottom-2 -right-2 bg-orange-500 text-white p-2 rounded-xl cursor-pointer shadow-lg hover:bg-orange-600 transition-colors">
-                                 <Plus size={16} />
-                                 <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                       const reader = new FileReader();
-                                       reader.onloadend = () => setProductImagePreview(reader.result as string);
-                                       reader.readAsDataURL(file);
-                                    }
-                                 }} />
-                              </label>
-                           </div>
-                        </div>
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Nom du Produit</label>
                            <input name="name" defaultValue={editingProduct?.name} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" required />
@@ -4390,23 +4439,48 @@ ${itemsText}
                            </div>
                         </div>
 
-                        {/* Additional Images Gallery */}
+                        {/* Unified Images Gallery */}
                         <div className="space-y-4 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
                            <div className="flex items-center justify-between">
                               <div>
                                  <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Galerie Photos</h4>
-                                 <p className="text-[9px] text-slate-400 font-bold mt-1">Ajoutez jusqu'à 3 images supplémentaires</p>
+                                 <p className="text-[9px] text-slate-400 font-bold mt-1">La 1ère image sera l'image principale</p>
                               </div>
                               <div className="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-[9px] font-black">
-                                 {productAdditionalImages.length}/3
+                                 {productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0)}/4
                               </div>
                            </div>
 
                            <div className="grid grid-cols-4 gap-3">
+                              {/* Main Image */}
+                              {(productImagePreview || editingProduct?.image) && (
+                                 <div className="relative group aspect-square">
+                                    <div className="w-full h-full bg-white rounded-xl overflow-hidden border-2 border-orange-400 shadow-md relative">
+                                       <img src={productImagePreview || editingProduct?.image} className="w-full h-full object-cover" alt="Image principale" />
+                                       <div className="absolute top-1 left-1 bg-orange-500 text-white px-2 py-1 rounded text-[8px] font-black">PRINCIPALE</div>
+                                    </div>
+                                    <button
+                                       type="button"
+                                       onClick={() => {
+                                          setProductImagePreview(null);
+                                          // Si on supprime l'image principale, utiliser la première image de la galerie comme nouvelle principale
+                                          if (productAdditionalImages.length > 0) {
+                                             setProductImagePreview(productAdditionalImages[0]);
+                                             setProductAdditionalImages(prev => prev.slice(1));
+                                          }
+                                       }}
+                                       className="absolute -top-2 -right-2 bg-red-500 text-white p-1 rounded-full shadow-lg hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                                    >
+                                       <X size={10} />
+                                    </button>
+                                 </div>
+                              )}
+
+                              {/* Gallery Images */}
                               {productAdditionalImages.map((preview, index) => (
                                  <div key={index} className="relative group aspect-square">
                                     <div className="w-full h-full bg-white rounded-xl overflow-hidden border border-slate-200 shadow-sm">
-                                       <img src={preview} className="w-full h-full object-cover" alt={`Extra ${index + 1}`} />
+                                       <img src={preview} className="w-full h-full object-cover" alt={`Image ${index + 2}`} />
                                     </div>
                                     <button
                                        type="button"
@@ -4418,20 +4492,30 @@ ${itemsText}
                                  </div>
                               ))}
 
-                              {productAdditionalImages.length < 3 && (
+                              {/* Upload Button */}
+                              {(productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0)) < 4 && (
                                  <label className="w-full aspect-square bg-white border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition-all group">
-                                    <Plus size={16} className="text-slate-300 group-hover:text-orange-400 transition-colors" />
+                                    <Plus size={20} className="text-slate-300 group-hover:text-orange-400 transition-colors" />
+                                    <span className="text-[9px] text-slate-400 font-bold mt-1">Ajouter image</span>
                                     <input
                                        type="file"
                                        className="hidden"
                                        accept="image/*"
                                        onChange={async (e) => {
                                           const file = e.target.files?.[0];
-                                          if (file && productAdditionalImages.length < 3) {
+                                          if (file) {
+                                             const totalImages = productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0);
+                                             if (totalImages >= 4) return;
+                                             
                                              const reader = new FileReader();
                                              reader.onloadend = () => {
                                                 if (typeof reader.result === 'string') {
-                                                   setProductAdditionalImages(prev => [...prev, reader.result as string]);
+                                                   // Si pas d'image principale, utiliser cette nouvelle comme principale
+                                                   if (!productImagePreview && !editingProduct?.image) {
+                                                      setProductImagePreview(reader.result);
+                                                   } else {
+                                                      setProductAdditionalImages(prev => [...prev, reader.result as string]);
+                                                   }
                                                 }
                                              };
                                              reader.readAsDataURL(file);
@@ -4569,60 +4653,6 @@ ${itemsText}
                            </div>
                         </div>
 
-                        {/* Product Images Upload Section - Only shown when has_products is enabled */}
-                        {hasProductsEnabled && (
-                           <div className="space-y-4 bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[2rem] border-2 border-indigo-100">
-                              <div className="flex items-center justify-between">
-                                 <div>
-                                    <h4 className="text-sm font-black text-indigo-900 uppercase tracking-widest">Images Produits</h4>
-                                    <p className="text-[10px] text-indigo-600 font-bold mt-1">Ajoutez jusqu'à 5 images de produits</p>
-                                 </div>
-                                 <div className="bg-indigo-500 text-white px-3 py-1 rounded-full text-[10px] font-black">
-                                    {productImagesPreviews.length}/5
-                                 </div>
-                              </div>
-
-                              <div className="grid grid-cols-5 gap-3">
-                                 {productImagesPreviews.map((preview, index) => (
-                                    <div key={index} className="relative group">
-                                       <div className="w-full aspect-square bg-white rounded-xl overflow-hidden border-2 border-indigo-200 shadow-sm">
-                                          <img src={preview} className="w-full h-full object-cover" alt={`Product ${index + 1}`} />
-                                       </div>
-                                       <button
-                                          type="button"
-                                          onClick={() => setProductImagesPreviews(prev => prev.filter((_, i) => i !== index))}
-                                          className="absolute -top-2 -right-2 bg-red-500 text-white p-1.5 rounded-full shadow-lg hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
-                                       >
-                                          <X size={12} />
-                                       </button>
-                                    </div>
-                                 ))}
-
-                                 {productImagesPreviews.length < 5 && (
-                                    <label className="w-full aspect-square bg-white border-2 border-dashed border-indigo-300 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-50 transition-all group">
-                                       <Plus size={20} className="text-indigo-400 group-hover:text-indigo-600 transition-colors" />
-                                       <span className="text-[8px] font-black text-indigo-400 group-hover:text-indigo-600 uppercase mt-1">Ajouter</span>
-                                       <input
-                                          type="file"
-                                          className="hidden"
-                                          accept="image/*"
-                                          onChange={(e) => {
-                                             const file = e.target.files?.[0];
-                                             if (file && productImagesPreviews.length < 5) {
-                                                const reader = new FileReader();
-                                                reader.onloadend = () => {
-                                                   setProductImagesPreviews(prev => [...prev, reader.result as string]);
-                                                };
-                                                reader.readAsDataURL(file);
-                                             }
-                                          }}
-                                       />
-                                    </label>
-                                 )}
-                              </div>
-                           </div>
-                        )}
-
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Description de la Marque</label>
                            <textarea name="description" defaultValue={editingStore?.description} rows={2} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all resize-none" placeholder="Une brève description de cette marque..." />
@@ -4722,15 +4752,6 @@ ${itemsText}
                               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nom EN</label>
                               <input name="name_en" defaultValue={editingCategory?.name_en} required className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" />
                            </div>
-                        </div>
-                        <div className="space-y-1">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sous-catégories (séparées par des virgules)</label>
-                           <input
-                              name="sub_categories"
-                              defaultValue={editingCategory?.sub_categories?.join(', ')}
-                              placeholder="ex: Sushi, Pizza, Burger"
-                              className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all"
-                           />
                         </div>
                         <div className="space-y-4">
                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Image de la Catégorie</label>

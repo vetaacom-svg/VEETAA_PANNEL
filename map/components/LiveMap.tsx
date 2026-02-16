@@ -29,9 +29,39 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
 
   return (
     <div className="w-full h-full relative">
-      <MapContainer center={INITIAL_CENTER} zoom={13} scrollWheelZoom={true} className="h-full w-full">
+      <svg style={{ position: 'absolute', width: 0, height: 0 }}>
+        <filter id="street-darkener">
+          <feComponentTransfer>
+            <feFuncR type="discrete" tableValues="0.5 0.7 0.9 1.0" />
+            <feFuncG type="discrete" tableValues="0.5 0.7 0.9 1.0" />
+            <feFuncB type="discrete" tableValues="0.5 0.7 0.9 1.0" />
+          </feComponentTransfer>
+          <feColorMatrix type="matrix" values="
+            1 0 0 0 0
+            0 1 0 0 0
+            0 0 1 0 0
+            0 0 0 1 0" />
+          <feComponentTransfer>
+            {/* Target purely white/very bright areas (roads) and map them to grey */}
+            <feFuncR type="gamma" exponent="1.5" amplitude="0.8" offset="0" />
+            <feFuncG type="gamma" exponent="1.5" amplitude="0.8" offset="0" />
+            <feFuncB type="gamma" exponent="1.5" amplitude="0.8" offset="0" />
+          </feComponentTransfer>
+        </filter>
+      </svg>
+      <style>{`
+        .leaflet-tile {
+          filter: url(#street-darkener) saturate(1.2) !important;
+        }
+        .leaflet-control-attribution {
+          display: none !important;
+        }
+      `}</style>
+      <MapContainer center={INITIAL_CENTER} zoom={13} scrollWheelZoom={true} className="h-full w-full" attributionControl={false}>
         <MapController targetPos={activeStore && activeStore.lat && activeStore.lng ? [activeStore.lat, activeStore.lng] : null} />
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+        />
 
         {/* MAGASINS */}
         {stores.map(store => {
