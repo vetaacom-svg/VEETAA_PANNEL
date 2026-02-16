@@ -70,6 +70,7 @@ export default function App() {
   const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
   const [ribs, setRibs] = useState<RIB[]>([]);
   const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '+212 600 000 000', email: 'support@veetaa.ma' });
+  const [deliveryZone, setDeliveryZone] = useState<'kenitra' | 'all_morocco'>('kenitra');
   const [pageVisibility, setPageVisibility] = useState({
     hideFinance: false,
     hideStatistics: false,
@@ -109,9 +110,23 @@ export default function App() {
 
     // Abonnement Temps Réel aux commandes
     // Abonnement Temps Réel aux commandes
+    let invoiceRefreshTimeout: NodeJS.Timeout;
+    const debouncedInvoiceRefresh = () => {
+      if (invoiceRefreshTimeout) clearTimeout(invoiceRefreshTimeout);
+      invoiceRefreshTimeout = setTimeout(() => {
+        console.log("Realtime: Invoice updated, refreshing orders");
+        fetchOrders();
+      }, 500); // Délai court pour les factures
+    };
+
     const ordersSubscription = supabase
       .channel('public:orders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
+        console.log("Order updated:", payload);
+        debouncedInvoiceRefresh();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
+        console.log("New order created");
         fetchOrders();
       })
       .subscribe();
@@ -139,6 +154,7 @@ export default function App() {
 
     return () => {
       if (refreshTimeout) clearTimeout(refreshTimeout);
+      if (invoiceRefreshTimeout) clearTimeout(invoiceRefreshTimeout);
       supabase.removeChannel(ordersSubscription);
       supabase.removeChannel(dataSubscription);
     };
@@ -184,7 +200,19 @@ export default function App() {
         createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
       })));
     }
-    if (usersRes.data) setUsers(usersRes.data.map(u => ({ ...u, fullName: u.full_name, lastLat: u.last_lat, lastLng: u.last_lng, isBlocked: u.is_blocked })));
+    if (usersRes.data) {
+      setUsers(usersRes.data.map((u: any) => ({
+        id: u.id,
+        fullName: u.full_name,
+        phone: u.phone,
+        email: u.email,
+        language: u.language,
+        isAdmin: u.is_admin,
+        isBlocked: u.is_blocked,
+        lastLat: u.last_lat,
+        lastLng: u.last_lng
+      })));
+    }
 
     if (storesRes.data && productsRes.data) {
       console.log(`FETCHED: ${storesRes.data.length} stores, ${productsRes.data.length} products`);
@@ -224,6 +252,11 @@ export default function App() {
       const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
       if (support) setSupportNumber(support.value);
 
+      const deliveryZoneSetting = settingsRes.data.find((s: any) => s.key === 'delivery_zone');
+      if (deliveryZoneSetting) {
+        setDeliveryZone(deliveryZoneSetting.value as 'kenitra' | 'all_morocco');
+      }
+
       const hideFinance = settingsRes.data.find((s: any) => s.key === 'hide_finance')?.value === '1';
       const hideStatistics = settingsRes.data.find((s: any) => s.key === 'hide_statistics')?.value === '1';
       const hideAnnouncements = settingsRes.data.find((s: any) => s.key === 'hide_announcements')?.value === '1';
@@ -256,13 +289,13 @@ export default function App() {
       const { data, error } = await supabase
         .from('orders')
         .select(`
-          id, created_at, status, customer_name, phone, delivery_lat, delivery_lng, 
-          items, total_products, total_final, payment_method, category_name, store_name, 
+          id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng, 
+          items, total_products, delivery_fee, total_final, payment_method, category_name, store_name, 
           assigned_driver_id, status_history, is_archived, store_rating, driver_rating, 
-          text_order_notes, delivery_note
+          text_order_notes, delivery_note, store_invoice_base64, payment_receipt_base64, prescription_base64
         `)
         .order('created_at', { ascending: false })
-        .limit(100); // Réduit pour éviter les timeouts
+        .limit(500); // Augmenté pour charger les anciennes commandes
 
       if (error) {
         console.error("FETCH ORDERS ERROR:", error);
@@ -270,10 +303,15 @@ export default function App() {
       }
 
       console.log(`FETCHED ORDERS: ${data?.length}`);
+      
+      // Vérifie combien de commandes ont une facture
+      const ordersWithInvoice = data?.filter(o => o.store_invoice_base64)?.length || 0;
+      console.log(`Orders with invoices: ${ordersWithInvoice}/${data?.length}`);
 
       if (data && !error) {
         const mappedOrders: Order[] = data.map(o => ({
           id: o.id.toString(),
+          userId: o.user_id,
           customerName: o.customer_name,
           phone: o.phone,
           location: { lat: o.delivery_lat, lng: o.delivery_lng },
@@ -284,11 +322,14 @@ export default function App() {
           paymentReceiptImage: o.payment_receipt_base64,
           prescription_base64: o.prescription_base64,
           payment_receipt_base64: o.payment_receipt_base64,
-          total: o.total_products || (o.total_final ? o.total_final - 15 : 0),
+          store_invoice_base64: o.store_invoice_base64,
+          total: o.total_products || (o.total_final ? o.total_final - (o.delivery_fee || 15) : 0),
           total_products: o.total_products,
+          delivery_fee: o.delivery_fee || 15,
           total_final: o.total_final,
           status: o.status,
           paymentMethod: o.payment_method,
+          payment_method: o.payment_method,
           timestamp: new Date(o.created_at).getTime(),
           category: o.category_name || 'Autre',
           storeName: o.store_name,
@@ -492,6 +533,7 @@ export default function App() {
         categories={categories}
         subCategories={subCategories}
         supportNumber={supportNumber}
+        deliveryZone={deliveryZone}
         onUpdateStatus={handleUpdateOrderStatus}
         onAssignDriver={handleAssignDriver}
         onArchiveOrder={handleArchiveOrder}

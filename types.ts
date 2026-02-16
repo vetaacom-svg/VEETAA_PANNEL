@@ -140,8 +140,10 @@ export interface Order {
   paymentReceiptImage?: string;
   prescription_base64?: string;
   payment_receipt_base64?: string;
+  store_invoice_base64?: string;
   total: number;
   total_products?: number;
+  delivery_fee?: number;
   total_final?: number;
   status: OrderStatus;
   paymentMethod: 'cash' | 'transfer';
