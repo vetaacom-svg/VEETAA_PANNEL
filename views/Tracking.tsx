@@ -39,7 +39,7 @@ const Tracking: React.FC<TrackingProps> = ({ orders, onBack }) => {
   const currentIdx = getCurrentStepIndex();
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 animate-in fade-in duration-500">
+    <div className="flex flex-col h-full bg-slate-50 animate-in fade-in duration-200">
       <div className="bg-white p-4 border-b flex items-center justify-between sticky top-0 z-30">
          <button onClick={onBack} className="p-2 -ml-2"><ChevronLeft className="w-6 h-6" /></button>
          <h2 className="text-lg font-black tracking-tight">Suivi de la commande #{activeOrder.id}</h2>

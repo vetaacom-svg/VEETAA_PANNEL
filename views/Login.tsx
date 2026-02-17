@@ -33,7 +33,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onGoToSignup, onSkip }) => {
   };
 
   return (
-    <div className="min-h-screen p-8 flex flex-col justify-center animate-in fade-in duration-500">
+    <div className="min-h-screen p-8 flex flex-col justify-center animate-in fade-in duration-200">
       <div className="mb-12">
         <h2 className="text-3xl font-black text-slate-800 mb-2">Bon retour ! 👋</h2>
         <p className="text-slate-500">Entrez votre numéro pour continuer.</p>

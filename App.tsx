@@ -71,6 +71,9 @@ export default function App() {
   const [ribs, setRibs] = useState<RIB[]>([]);
   const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '+212 600 000 000', email: 'support@veetaa.ma' });
   const [deliveryZone, setDeliveryZone] = useState<'kenitra' | 'all_morocco'>('kenitra');
+  // delivery fee per km (admin-configurable)
+  const [deliveryFeePerKm, setDeliveryFeePerKm] = useState<number>(3);
+  
   const [pageVisibility, setPageVisibility] = useState({
     hideFinance: false,
     hideStatistics: false,
@@ -91,54 +94,118 @@ export default function App() {
         const parsedUser = JSON.parse(savedUser);
         setUser(parsedUser);
         if (parsedUser.language) setLanguage(parsedUser.language);
-        fetchOrders();
       }
 
       const adminToken = localStorage.getItem('veetaa_admin_token');
       if (adminToken) {
         setIsAdminLogged(true);
-        fetchOrders();
       }
 
       const savedFavs = localStorage.getItem('veetaa_favorites');
       if (savedFavs) setFavorites(JSON.parse(savedFavs));
 
-      await fetchData();
+      // Chargement initial sera fait par fetchData() et fetchOrders() appelés plus bas
       setLoading(false);
     };
     initApp();
 
-    // Abonnement Temps Réel aux commandes
-    // Abonnement Temps Réel aux commandes
-    let invoiceRefreshTimeout: NodeJS.Timeout;
-    const debouncedInvoiceRefresh = () => {
-      if (invoiceRefreshTimeout) clearTimeout(invoiceRefreshTimeout);
-      invoiceRefreshTimeout = setTimeout(() => {
-        console.log("Realtime: Invoice updated, refreshing orders");
-        fetchOrders();
-      }, 500); // Délai court pour les factures
-    };
-
+    // Realtime subscription aux commandes — mettre à jour localement un seul enregistrement
     const ordersSubscription = supabase
       .channel('public:orders')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'orders' }, (payload) => {
-        console.log("Order updated:", payload);
-        debouncedInvoiceRefresh();
+        try {
+          const rec = payload.new || payload.record;
+          if (!rec) return;
+          const idStr = String(rec.id);
+          const mapped = {
+            id: idStr,
+            userId: rec.user_id,
+            customerName: rec.customer_name,
+            phone: rec.phone,
+            location: { lat: rec.delivery_lat, lng: rec.delivery_lng },
+            items: rec.items || [],
+            textOrder: rec.text_order_notes,
+            delivery_fee: rec.delivery_fee ?? 0,
+            total: rec.total_products ?? (rec.total_final ? rec.total_final - (rec.delivery_fee ?? 0) : 0),
+            total_products: rec.total_products,
+            total_final: rec.total_final,
+            status: rec.status,
+            paymentMethod: rec.payment_method,
+            timestamp: rec.created_at ? new Date(rec.created_at).getTime() : Date.now(),
+            category: rec.category_name,
+            storeName: rec.store_name,
+            assignedDriverId: rec.assigned_driver_id,
+            statusHistory: rec.status_history || [],
+            isArchived: Boolean(rec.is_archived),
+            storeRating: rec.store_rating ? Number(rec.store_rating) : undefined,
+            driverRating: rec.driver_rating ? Number(rec.driver_rating) : undefined,
+            prescription_base64: rec.prescription_base64 || undefined,
+            payment_receipt_base64: rec.payment_receipt_base64 || undefined,
+            store_invoice_base64: rec.store_invoice_base64 || undefined,
+            deliveryNote: rec.delivery_note || undefined,
+            prescriptionImage: rec.prescription_base64 || undefined,
+            paymentReceiptImage: rec.payment_receipt_base64 || undefined
+          } as any;
+
+          setOrders(prev => {
+            const exists = prev.some(o => o.id === idStr);
+            if (exists) return prev.map(o => o.id === idStr ? { ...o, ...mapped } : o);
+            return [mapped, ...prev];
+          });
+        } catch (err) {
+          console.warn('Realtime order UPDATE handler error', err);
+        }
       })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, () => {
-        console.log("New order created");
-        fetchOrders();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'orders' }, (payload) => {
+        try {
+          const rec = payload.new || payload.record;
+          if (!rec) return;
+          const idStr = String(rec.id);
+          const mapped = {
+            id: idStr,
+            userId: rec.user_id,
+            customerName: rec.customer_name,
+            phone: rec.phone,
+            location: { lat: rec.delivery_lat, lng: rec.delivery_lng },
+            items: rec.items || [],
+            textOrder: rec.text_order_notes,
+            delivery_fee: rec.delivery_fee ?? 0,
+            total: rec.total_products ?? (rec.total_final ? rec.total_final - (rec.delivery_fee ?? 0) : 0),
+            total_products: rec.total_products,
+            total_final: rec.total_final,
+            status: rec.status,
+            paymentMethod: rec.payment_method,
+            timestamp: rec.created_at ? new Date(rec.created_at).getTime() : Date.now(),
+            category: rec.category_name,
+            storeName: rec.store_name,
+            assignedDriverId: rec.assigned_driver_id,
+            statusHistory: rec.status_history || [],
+            isArchived: Boolean(rec.is_archived),
+            storeRating: rec.store_rating ? Number(rec.store_rating) : undefined,
+            driverRating: rec.driver_rating ? Number(rec.driver_rating) : undefined,
+            prescription_base64: rec.prescription_base64 || undefined,
+            payment_receipt_base64: rec.payment_receipt_base64 || undefined,
+            store_invoice_base64: rec.store_invoice_base64 || undefined,
+            deliveryNote: rec.delivery_note || undefined,
+            prescriptionImage: rec.prescription_base64 || undefined,
+            paymentReceiptImage: rec.payment_receipt_base64 || undefined
+          } as any;
+          setOrders(prev => [mapped, ...prev]);
+        } catch (err) {
+          console.warn('Realtime order INSERT handler error', err);
+        }
       })
       .subscribe();
 
-    // Debounce pour éviter les mises à jour trop fréquentes (ex: positions livreurs)
+    // Debounce pour éviter les mises à jour trop fréquentes
     let refreshTimeout: NodeJS.Timeout;
+    let invoiceRefreshTimeout: NodeJS.Timeout | null = null;
     const debouncedRefresh = () => {
       if (refreshTimeout) clearTimeout(refreshTimeout);
       refreshTimeout = setTimeout(() => {
         console.log("Realtime: Refreshing global data due to changes");
         fetchData();
-      }, 2000);
+      }, 5000);
     };
 
     // Abonnement Temps Réel aux autres tables (pour l'admin)
@@ -152,9 +219,20 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, debouncedRefresh)
       .subscribe();
 
+    // Polling fallback: every 30s
+    const polling = setInterval(() => {
+      try {
+        const adminToken = localStorage.getItem('veetaa_admin_token');
+        if (adminToken) fetchOrders();
+      } catch (e) {
+        console.warn('Polling orders failed', e);
+      }
+    }, 30000);
+
     return () => {
       if (refreshTimeout) clearTimeout(refreshTimeout);
       if (invoiceRefreshTimeout) clearTimeout(invoiceRefreshTimeout);
+      clearInterval(polling);
       supabase.removeChannel(ordersSubscription);
       supabase.removeChannel(dataSubscription);
     };
@@ -166,52 +244,101 @@ export default function App() {
     }
   }, [isAdminLogged]);
 
+  // Charger les données au montage initial
+  useEffect(() => {
+    fetchData();
+  }, []);
+
   const fetchData = async () => {
-    console.log("REFRESHING ALL DATA...");
-    const [catsRes, storesRes, annRes, driversRes, usersRes, settingsRes, productsRes, subCatsRes] = await Promise.all([
+    console.log("REFRESHING DATA...");
+    // Charge toujours: categories, stores, products, annonces
+    // Charge admin data uniquement si admin est connecté
+    const isAdminMode = localStorage.getItem('veetaa_admin_token');
+    
+    const queries = [
       supabase.from('categories').select('*').order('display_order'),
       supabase.from('stores').select('*'),
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
-      supabase.from('drivers').select('*'),
-      supabase.from('profiles').select('*'),
-      supabase.from('settings').select('*'),
       supabase.from('products').select('*'),
       supabase.from('sub_categories').select('*').order('name')
-    ]);
+    ];
+
+    // Ajoute les requêtes admin seulement si nécessaire
+    if (isAdminMode) {
+      queries.push(
+        supabase.from('drivers').select('*'),
+        supabase.from('profiles').select('*'),
+        supabase.from('settings').select('*')
+      );
+    }
+
+    const results = await Promise.all(queries);
+    const [catsRes, storesRes, annRes, productsRes, subCatsRes, ...adminRes] = results;
 
     if (catsRes.error) console.error("Error fetching categories:", catsRes.error);
     if (storesRes.error) console.error("Error fetching stores:", storesRes.error);
     if (annRes.error) console.error("Error fetching announcements:", annRes.error);
-    if (driversRes.error) console.error("Error fetching drivers:", driversRes.error);
-    if (usersRes.error) console.error("Error fetching users:", usersRes.error);
     if (productsRes.error) console.error("Error fetching products:", productsRes.error);
     if (subCatsRes?.error) console.error("Error fetching sub-categories:", subCatsRes.error);
 
     setCategories(catsRes.data || []);
     setSubCategories(subCatsRes?.data || []);
-    if (driversRes.data) {
-      setDrivers(driversRes.data.map((d: any) => ({
-        ...d,
-        fullName: d.full_name,
-        idCardNumber: d.id_card_number,
-        profilePhoto: d.profile_photo,
-        lastLat: d.last_lat,
-        lastLng: d.last_lng,
-        createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
-      })));
-    }
-    if (usersRes.data) {
-      setUsers(usersRes.data.map((u: any) => ({
-        id: u.id,
-        fullName: u.full_name,
-        phone: u.phone,
-        email: u.email,
-        language: u.language,
-        isAdmin: u.is_admin,
-        isBlocked: u.is_blocked,
-        lastLat: u.last_lat,
-        lastLng: u.last_lng
-      })));
+
+    // Traite les données admin seulement si elles existent
+    if (isAdminMode && adminRes.length >= 3) {
+      const [driversRes, usersRes, settingsRes] = adminRes;
+      if (driversRes.error) console.error("Error fetching drivers:", driversRes.error);
+      if (usersRes.error) console.error("Error fetching users:", usersRes.error);
+      if (settingsRes.error) console.error("Error fetching settings:", settingsRes.error);
+
+      if (driversRes.data) {
+        setDrivers(driversRes.data.map((d: any) => ({
+          ...d,
+          fullName: d.full_name,
+          idCardNumber: d.id_card_number,
+          profilePhoto: d.profile_photo,
+          lastLat: d.last_lat,
+          lastLng: d.last_lng,
+          createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
+        })));
+      }
+      if (usersRes.data) {
+        setUsers(usersRes.data.map((u: any) => ({
+          id: u.id,
+          fullName: u.full_name,
+          phone: u.phone,
+          email: u.email,
+          language: u.language,
+          isAdmin: u.is_admin,
+          isBlocked: u.is_blocked,
+          lastLat: u.last_lat,
+          lastLng: u.last_lng
+        })));
+      }
+      if (settingsRes.data) {
+        const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
+        if (support) setSupportNumber(support.value);
+
+        const deliveryZoneSetting = settingsRes.data.find((s: any) => s.key === 'delivery_zone');
+        if (deliveryZoneSetting) {
+          setDeliveryZone(deliveryZoneSetting.value as 'kenitra' | 'all_morocco');
+        }
+
+        const feePerKmSetting = settingsRes.data.find((s: any) => s.key === 'delivery_fee_per_km');
+        if (feePerKmSetting) {
+          setDeliveryFeePerKm(Number(feePerKmSetting.value) || 3);
+        }
+
+        const pageVisibilitySetting = settingsRes.data.find((s: any) => s.key === 'page_visibility');
+        if (pageVisibilitySetting && pageVisibilitySetting.value) {
+          try {
+            const visibility = JSON.parse(pageVisibilitySetting.value);
+            setPageVisibility(visibility);
+          } catch (e) {
+            console.warn('Failed to parse page_visibility setting', e);
+          }
+        }
+      }
     }
 
     if (storesRes.data && productsRes.data) {
@@ -255,36 +382,18 @@ export default function App() {
       setStores(mappedStores);
     }
     if (annRes.data) setAnnouncements(annRes.data);
-    if (settingsRes.data) {
-      const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
-      if (support) setSupportNumber(support.value);
 
-      const deliveryZoneSetting = settingsRes.data.find((s: any) => s.key === 'delivery_zone');
-      if (deliveryZoneSetting) {
-        setDeliveryZone(deliveryZoneSetting.value as 'kenitra' | 'all_morocco');
-      }
-
-      const hideFinance = settingsRes.data.find((s: any) => s.key === 'hide_finance')?.value === '1';
-      const hideStatistics = settingsRes.data.find((s: any) => s.key === 'hide_statistics')?.value === '1';
-      const hideAnnouncements = settingsRes.data.find((s: any) => s.key === 'hide_announcements')?.value === '1';
-
-      setPageVisibility({
-        hideFinance,
-        hideStatistics,
-        hideAnnouncements
-      });
-
+    // Fetch RIBs and support info seulement si admin
+    if (isAdminMode) {
+      const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
+      if (ribsData) setRibs(ribsData);
     }
-
-    const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
-    if (ribsData) setRibs(ribsData);
 
     const { data: supportInfoData } = await supabase.from('support_info').select('*').limit(1);
     if (supportInfoData && supportInfoData.length > 0) {
       setSupportInfo(supportInfoData[0]);
       setSupportNumber(supportInfoData[0].phone);
     }
-    // await fetchOrders(); // Removed to prevent infinite loop and decouple updates
   };
 
   const showNotification = (title: string, body: string) => {
@@ -294,16 +403,17 @@ export default function App() {
 
   const fetchOrders = async () => {
     try {
+      // Fetch order data including base64 images (store invoice, prescription, payment receipt)
       const { data, error } = await supabase
         .from('orders')
         .select(`
-          id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng, 
-          items, total_products, delivery_fee, total_final, payment_method, category_name, store_name, 
-          assigned_driver_id, status_history, is_archived, store_rating, driver_rating, 
-          text_order_notes, delivery_note, store_invoice_base64, payment_receipt_base64, prescription_base64
+          id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng,
+          items, total_products, delivery_fee, total_final, payment_method, category_name, store_name,
+          assigned_driver_id, status_history, is_archived, store_rating, driver_rating,
+          store_invoice_base64, prescription_base64, payment_receipt_base64, text_order_notes, delivery_note
         `)
         .order('created_at', { ascending: false })
-        .limit(500); // Augmenté pour charger les anciennes commandes
+        .limit(200);
 
       if (error) {
         console.error("FETCH ORDERS ERROR:", error);
@@ -311,10 +421,6 @@ export default function App() {
       }
 
       console.log(`FETCHED ORDERS: ${data?.length}`);
-      
-      // Vérifie combien de commandes ont une facture
-      const ordersWithInvoice = data?.filter(o => o.store_invoice_base64)?.length || 0;
-      console.log(`Orders with invoices: ${ordersWithInvoice}/${data?.length}`);
 
       if (data && !error) {
         const mappedOrders: Order[] = data.map(o => ({
@@ -325,27 +431,26 @@ export default function App() {
           location: { lat: o.delivery_lat, lng: o.delivery_lng },
           items: o.items || [],
           textOrder: o.text_order_notes,
-          deliveryNote: o.delivery_note,
-          prescriptionImage: o.prescription_base64,
-          paymentReceiptImage: o.payment_receipt_base64,
-          prescription_base64: o.prescription_base64,
-          payment_receipt_base64: o.payment_receipt_base64,
-          store_invoice_base64: o.store_invoice_base64,
-          total: o.total_products || (o.total_final ? o.total_final - (o.delivery_fee || 15) : 0),
+          total: o.total_products ?? (o.total_final ? o.total_final - (o.delivery_fee ?? 0) : 0),
           total_products: o.total_products,
-          delivery_fee: o.delivery_fee || 15,
+          delivery_fee: o.delivery_fee ?? 0,
           total_final: o.total_final,
           status: o.status,
           paymentMethod: o.payment_method,
-          payment_method: o.payment_method,
-          timestamp: new Date(o.created_at).getTime(),
+          timestamp: o.created_at ? new Date(o.created_at).getTime() : Date.now(),
           category: o.category_name || 'Autre',
           storeName: o.store_name,
           assignedDriverId: o.assigned_driver_id,
           statusHistory: o.status_history || [],
           isArchived: Boolean(o.is_archived),
           storeRating: o.store_rating ? Number(o.store_rating) : undefined,
-          driverRating: o.driver_rating ? Number(o.driver_rating) : undefined
+          driverRating: o.driver_rating ? Number(o.driver_rating) : undefined,
+          prescription_base64: o.prescription_base64 || undefined,
+          payment_receipt_base64: o.payment_receipt_base64 || undefined,
+          store_invoice_base64: o.store_invoice_base64 || undefined,
+          deliveryNote: o.delivery_note || undefined,
+          prescriptionImage: o.prescription_base64 || undefined,
+          paymentReceiptImage: o.payment_receipt_base64 || undefined
         }));
         setOrders(mappedOrders);
       }
@@ -398,6 +503,7 @@ export default function App() {
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, statusHistory: newHistory } : o));
       showNotification("Statut Mis à jour", `Commande #${orderId} est maintenant: ${status}`);
+      
     } catch (err) {
       console.error("Erreur statut:", err);
     }
@@ -413,6 +519,7 @@ export default function App() {
     console.log("Archive success for:", orderId);
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isArchived: true } : o));
     showNotification("Archivée", `Commande #${orderId} a été déplacée vers l'historique.`);
+    
   }, []);
 
   const handleRestoreOrder = useCallback(async (orderId: string) => {
@@ -424,6 +531,7 @@ export default function App() {
     }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isArchived: false } : o));
     showNotification("Restaurée", `Commande #${orderId} a été restaurée.`);
+    
   }, []);
 
   const handlePermanentDeleteOrder = useCallback(async (orderId: string) => {
@@ -435,12 +543,14 @@ export default function App() {
     }
     setOrders(prev => prev.filter(o => o.id !== orderId));
     showNotification("Supprimée Définitivement", `Commande #${orderId} a été supprimée.`);
+    
   }, []);
 
   const handleBanUser = useCallback(async (phone: string) => {
     await supabase.from('profiles').update({ is_blocked: true }).eq('phone', phone);
     setUsers(prev => prev.map(u => u.phone === phone ? { ...u, isBlocked: true } : u));
     showNotification("Utilisateur Banni", `L'utilisateur avec le numéro ${phone} a été banni.`);
+    
   }, []);
 
 
@@ -448,6 +558,7 @@ export default function App() {
     await supabase.from('orders').update({ assigned_driver_id: driverId }).eq('id', parseInt(orderId));
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: driverId } : o));
     showNotification("Livreur Assigné", `Livreur ID ${driverId} s'occupe de la commande.`);
+    
   }, []);
 
   const handleUpdateSettings = useCallback(async (key: string, value: string, options?: { silent?: boolean }) => {
@@ -457,7 +568,12 @@ export default function App() {
       console.error(error);
     } else {
       if (key === 'support_number') setSupportNumber(value);
+      if (key === 'delivery_fee_per_km') {
+        const n = parseFloat(value as string);
+        if (!isNaN(n)) setDeliveryFeePerKm(n);
+      }
       if (!options?.silent) showNotification("Réglages Enregistrés", "Les paramètres système ont été mis à jour.");
+      
     }
   }, []);
 
@@ -468,6 +584,7 @@ export default function App() {
     } else if (data) {
       setAnnouncements(prev => [data[0], ...prev]);
       showNotification("Annonce Créée", "La nouvelle bannière est en ligne.");
+      
     }
   }, []);
 
@@ -478,6 +595,7 @@ export default function App() {
     } else {
       setAnnouncements(prev => prev.filter(a => a.id !== id));
       showNotification("Annonce Supprimée", "La bannière a été retirée.");
+      
     }
   }, []);
 
@@ -549,6 +667,7 @@ export default function App() {
         onDeletePermanently={handlePermanentDeleteOrder}
         onBanUser={handleBanUser}
         onUpdateSettings={handleUpdateSettings}
+        deliveryFeePerKm={deliveryFeePerKm}
         onCreateAnnouncement={handleCreateAnnouncement}
         onDeleteAnnouncement={handleDeleteAnnouncement}
         onLogout={handleLogout}

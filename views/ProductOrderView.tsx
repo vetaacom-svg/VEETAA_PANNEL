@@ -31,7 +31,7 @@ const ProductOrderView: React.FC<ProductOrderViewProps> = ({ product, category, 
   };
 
   return (
-    <div className="p-6 space-y-8 animate-in slide-in-from-bottom-10 duration-500">
+    <div className="p-6 space-y-8 animate-in slide-in-from-bottom-10 duration-200">
       <div className="flex flex-col items-center text-center space-y-4">
         <div className="w-48 h-48 rounded-[3rem] overflow-hidden shadow-2xl ring-4 ring-slate-50">
           <img src={product.image} className="w-full h-full object-cover" alt={product.name} />
@@ -62,7 +62,7 @@ const ProductOrderView: React.FC<ProductOrderViewProps> = ({ product, category, 
             <Camera className="w-3 h-3" />
             {isPharmacy ? "Uploader votre Ordonnance" : "Photo de référence (Reçu ou Article)"}
           </label>
-          <div className={`p-8 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-all ${image ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-200'}`}>
+          <div className={`p-8 rounded-[2.5rem] border-2 border-dashed flex flex-col items-center justify-center gap-3 transition-colors ${image ? 'bg-emerald-50 border-emerald-500' : 'bg-slate-50 border-slate-200'}`}>
             {image ? (
               <div className="relative w-full h-40">
                 <img src={image} className="w-full h-full object-cover rounded-2xl" alt="Preview" />
@@ -74,7 +74,7 @@ const ProductOrderView: React.FC<ProductOrderViewProps> = ({ product, category, 
                    {isPharmacy ? <HygieiaIcon className="w-7 h-7" /> : <Camera className="w-7 h-7" />}
                 </div>
                 <input type="file" accept="image/*" id="product-img" className="hidden" onChange={handleImageUpload} />
-                <label htmlFor="product-img" className="text-[10px] font-black uppercase tracking-widest bg-slate-900 text-white px-6 py-3 rounded-xl cursor-pointer hover:scale-105 active:scale-95 transition-all">SÉLECTIONNER PHOTO</label>
+                <label htmlFor="product-img" className="text-[10px] font-black uppercase tracking-widest bg-slate-900 text-white px-6 py-3 rounded-xl cursor-pointer hover:bg-slate-800 transition-colors">SÉLECTIONNER PHOTO</label>
               </>
             )}
           </div>
@@ -83,7 +83,7 @@ const ProductOrderView: React.FC<ProductOrderViewProps> = ({ product, category, 
 
       <button 
         onClick={() => onConfirm(product, text, image)}
-        className="w-full bg-orange-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-orange-200 flex items-center justify-center gap-3 active:scale-95 transition-all uppercase tracking-tight"
+        className="w-full bg-orange-600 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-orange-200 flex items-center justify-center gap-3 hover:bg-orange-700 transition-colors uppercase tracking-tight"
       >
         Valider pour l'achat <Send className="w-5 h-5" />
       </button>

@@ -43,7 +43,7 @@ const OtpVerification: React.FC<OtpProps> = ({ phone, onVerified, onBack }) => {
   };
 
   return (
-    <div className="min-h-screen p-8 flex flex-col justify-center animate-in fade-in duration-500">
+    <div className="min-h-screen p-8 flex flex-col justify-center animate-in fade-in duration-200">
       <button onClick={onBack} className="absolute top-8 left-8 p-2 bg-slate-100 rounded-full">
         <ArrowLeft className="w-5 h-5" />
       </button>

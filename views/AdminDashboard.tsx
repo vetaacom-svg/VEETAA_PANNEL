@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -12,10 +12,95 @@ import {
    Plus, Smartphone, MessageCircle, Camera, Link as LinkIcon, Copy, Map as MapIcon,
    Star, AlertTriangle, User, Calendar, CreditCard, Phone, Edit3, Image as ImageIcon, Bike,
    Save, Megaphone, Upload, Navigation, Trash, Info, UserCheck, UserMinus, ShieldCheck, RotateCw, LogOut, Share2, Clipboard, Scissors, Copy as CopyIcon, Quote, MessageSquare, Box, History as HistoryIcon,
-   DollarSign, BarChart3, TrendingUp, PieChart as PieChartIcon, Receipt, AlertCircle, FileText, Download, ZoomIn, ZoomOut, Mail, Target, ListTree, Globe, Shield
+   DollarSign, BarChart3, TrendingUp, PieChart as PieChartIcon, Receipt, AlertCircle, FileText, Download, ZoomIn, ZoomOut, Mail, Target, ListTree, Globe, Shield, Loader2
 } from 'lucide-react';
 import { CATEGORIES, MOCK_STORES } from '../constants';
 import { supabase, dataUrlToBlob } from '../lib/supabase';
+
+// Lightweight, memoized product card to avoid re-renders while scrolling
+type ProductCardProps = {
+  id: string;
+  name: string;
+  storeName?: string;
+  price?: number;
+  image?: string;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
+};
+const ProductCard: React.FC<ProductCardProps> = React.memo(({ id, name, storeName, price, image, onEdit, onDelete }) => {
+  return (
+     <div className="bg-white rounded-[2.5rem] border p-4 group hover:shadow-md transition-shadow duration-150 relative overflow-hidden" style={{willChange: 'transform, opacity'}}>
+        <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+           <button onClick={() => onEdit(id)} className="p-2 bg-white/90 text-slate-600 rounded-xl shadow-sm hover:text-orange-600"><Edit3 size={16} /></button>
+           <button onClick={() => onDelete(id)} className="p-2 bg-white/90 text-red-500 rounded-xl shadow-sm hover:bg-red-50"><Trash2 size={16} /></button>
+        </div>
+        <img src={image} loading="lazy" width={400} height={200} decoding="async" className="w-full h-40 object-cover rounded-[1.75rem] mb-4" />
+        <div className="p-2">
+           <h4 className="font-black text-slate-800 text-sm mb-1 truncate">{name}</h4>
+           <p className="text-[10px] text-slate-400 mb-2 truncate">{storeName || 'Marque inconnue'}</p>
+           <div className="flex justify-between items-center text-orange-600 font-black">{price} DH</div>
+        </div>
+     </div>
+  );
+}, (a, b) => a.id === b.id && a.name === b.name && a.price === b.price && a.image === b.image && a.storeName === b.storeName);
+
+// Lightweight, memoized store card for the PARTNERS tab
+type StoreCardProps = {
+  id: string;
+  image_url?: string;
+  image?: string;
+  name: string;
+  category_id?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  is_open?: boolean;
+  is_active?: boolean;
+  rating?: number;
+  onEdit: (id: string) => void;
+  onToggleOpen: (id: string, current: boolean | undefined) => void;
+  onToggleActive: (id: string, current: boolean | undefined) => void;
+  onDelete: (id: string) => void;
+};
+const StoreCard: React.FC<StoreCardProps> = React.memo(({ id, image_url, image, name, category_id, latitude, longitude, is_open, is_active, rating, onEdit, onToggleOpen, onToggleActive, onDelete }) => {
+  return (
+     <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm space-y-4" style={{willChange: 'transform, opacity'}}>
+        <div className="flex items-center gap-4">
+           <img src={image_url || image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} loading="lazy" width={64} height={64} decoding="async" className="w-16 h-16 rounded-[1.25rem] object-cover" />
+           <div className="flex-1">
+              <h4 className="font-black text-lg truncate">{name}</h4>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{category_id}</p>
+              {(latitude && longitude) ? (
+                 <div className="flex items-center gap-1 mt-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg w-fit">
+                    <MapPin size={10} />
+                    <span className="text-[9px] font-mono font-bold">{latitude.toFixed(4)}, {longitude.toFixed(4)}</span>
+                 </div>
+              ) : (
+                 <div className="flex items-center gap-1 mt-1 text-slate-400 bg-slate-50 px-2 py-1 rounded-lg w-fit">
+                    <MapPin size={10} />
+                    <span className="text-[9px] font-mono">Pas de coordonnées</span>
+                 </div>
+              )}
+           </div>
+           <div className="flex flex-col gap-2">
+              <button onClick={() => onToggleOpen(id, !!is_open)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                 {is_open ? 'Ouvert' : 'Fermé'}
+              </button>
+              <button onClick={() => onToggleActive(id, !!is_active)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${is_active ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                 {is_active ? 'Visible' : 'Caché'}
+              </button>
+           </div>
+        </div>
+        <div className="flex justify-between items-center pt-4 border-t">
+           <div className="flex items-center gap-1 text-orange-500"><Star size={14} fill="currentColor" /><span className="text-xs font-black">{rating || '4.5'}</span></div>
+           <div className="flex gap-2">
+              <button onClick={() => onEdit(id)} className="p-2 bg-slate-100 rounded-lg"><Edit3 size={16} /></button>
+              <button onClick={() => onDelete(id)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 size={16} /></button>
+           </div>
+        </div>
+     </div>
+  );
+}, (a, b) => a.id === b.id && a.name === b.name && a.image_url === b.image_url && a.is_open === b.is_open && a.is_active === b.is_active && a.rating === b.rating);
+
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie, Legend } from 'recharts';
@@ -29,13 +114,14 @@ interface AdminDashboardProps {
    announcements: Announcement[];
    supportNumber: string;
    deliveryZone?: 'kenitra' | 'all_morocco';
+   deliveryFeePerKm?: number; // nouveau réglage (DH / km)
    onUpdateStatus: (id: string, status: OrderStatus) => void;
    onAssignDriver: (orderId: string, driverId: string) => void;
    onArchiveOrder: (orderId: string) => void;
    onRestoreOrder: (orderId: string) => void;
    onDeletePermanently: (orderId: string) => void;
    onBanUser: (phone: string) => void;
-   onUpdateSettings: (key: string, value: string) => void;
+   onUpdateSettings: (key: string, value: string) => Promise<void>;
    onCreateAnnouncement: (ann: Partial<Announcement>) => void;
    onDeleteAnnouncement: (id: string) => void;
    onLogout: () => void;
@@ -452,18 +538,32 @@ const MapComponent: React.FC<{
 
    const activeUserPos = selectedOrder ? getCustomerPos(selectedOrder) : null;
 
-   // Icône personnalisée pour chaque store avec son image
+   // Icône personnalisée pour chaque store (image réelle si dispo, sinon avatar SVG généré)
    const createStoreIcon = (store: Store) => {
-      const img = store.image_url || store.image;
-      if (!img) return StoreMarkerIcon;
+      const img = store.image_url || (store as any).image;
+
+      // génère un avatar SVG data-uri à partir du nom si pas d'image
+      const makeInitialsSvg = (name = '') => {
+         const initials = (name.split(' ').map(s => s[0]).filter(Boolean).slice(0,2).join('') || 'S').toUpperCase();
+         const colors = ['#f97316','#06b6d4','#ef4444','#10b981','#8b5cf6','#f43f5e','#f59e0b'];
+         const hash = Array.from(initials).reduce((acc, c) => acc + c.charCodeAt(0), 0);
+         const bg = colors[hash % colors.length];
+         const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>` +
+            `<rect rx='20' width='100%' height='100%' fill='${bg}'/>` +
+            `<text x='50%' y='54%' font-family='Inter, Arial, sans-serif' font-size='52' font-weight='700' fill='#fff' text-anchor='middle' dominant-baseline='middle'>${initials}</text>` +
+            `</svg>`;
+         return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+      };
+
+      const src = img || makeInitialsSvg(store.name || 'Store');
 
       return L.divIcon({
-         html: `<div class="relative w-10 h-10 rounded-full border-4 border-orange-500 overflow-hidden shadow-2xl bg-white transition-transform hover:scale-110">
-                    <img src="${img}" class="w-full h-full object-cover"/>
-                 </div>`,
+         html: `<div class="relative w-10 h-10 rounded-full border-4 border-orange-500 overflow-hidden shadow-2xl bg-white transition-transform hover:scale-110">` +
+                   `<img src="${src}" class="w-full h-full object-cover"/>` +
+                `</div>`,
          className: '',
          iconSize: [40, 40],
-         iconAnchor: [20, 20] // Centré pour les cercles
+         iconAnchor: [20, 20]
       });
    };
 
@@ -520,7 +620,7 @@ const MapComponent: React.FC<{
                </Marker>
             )}
 
-            {/* MAGASINS */}
+            {console.debug('Map stores (id → img):', stores.map(s => ({ id: s.id, img: s.image_url || (s as any).image })))}{/* MAGASINS */}
             {stores.map(store => {
                const pos = getStorePos(store);
                if (!pos) return null;
@@ -858,7 +958,7 @@ const DriverStats: React.FC<{ driverId: string }> = ({ driverId }) => {
 };
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
-   orders: propOrders, users, drivers, stores, announcements: propAnnouncements, categories: propCategories, subCategories: propSubCategories, supportNumber: propSupport, deliveryZone: propDeliveryZone = 'kenitra',
+   orders: propOrders, users, drivers, stores, announcements: propAnnouncements, categories: propCategories, subCategories: propSubCategories, supportNumber: propSupport, deliveryZone: propDeliveryZone = 'kenitra', deliveryFeePerKm: propDeliveryFeePerKm,
    onUpdateStatus, onAssignDriver, onArchiveOrder, onRestoreOrder, onDeletePermanently,
    onBanUser, onUpdateSettings, onCreateAnnouncement, onDeleteAnnouncement, onLogout, onBack, setStores,
    pageVisibility = { hideFinance: false, hideStatistics: false, hideAnnouncements: false }
@@ -868,6 +968,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
    const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
    const [deliveryZone, setDeliveryZone] = useState<'kenitra' | 'all_morocco'>(propDeliveryZone || 'kenitra');
+   // delivery fee per km (configurable)
+   const [feePerKm, setFeePerKm] = useState<number>(typeof (deliveryFeePerKm) !== 'undefined' ? deliveryFeePerKm : 3);
+   const [savingFeePerKm, setSavingFeePerKm] = useState(false);
+   const [savedFeePerKm, setSavedFeePerKm] = useState(false);
    const [viewingImage, setViewingImage] = useState<string | null>(null);
    const [currentAdmin, setCurrentAdmin] = useState<any>(null);
    const [showProfileModal, setShowProfileModal] = useState(false);
@@ -884,6 +988,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
    }, []);
 
+   // sync delivery fee per km when prop changes
+   useEffect(() => {
+      if (typeof propDeliveryFeePerKm !== 'undefined') setFeePerKm(propDeliveryFeePerKm);
+   }, [propDeliveryFeePerKm]);
+
    // États pour lier un store à la carte
    const [pickingStore, setPickingStore] = useState<Store | null>(null);
    const [pickingPos, setPickingPos] = useState<[number, number] | null>(null);
@@ -892,6 +1001,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          setEditingOrderNotes(selectedOrder.textOrder || '');
       }
    }, [selectedOrder]);
+
+   // When an order is selected, fetch the latest row from DB to ensure we have
+   // the latest base64 images (store_invoice_base64, prescription_base64, etc.)
+   useEffect(() => {
+      let mounted = true;
+      const fetchSelectedOrder = async () => {
+         if (!selectedOrder?.id) return;
+         try {
+            const { data, error } = await supabase
+               .from('orders')
+               .select('store_invoice_base64, prescription_base64, payment_receipt_base64, text_order_notes, delivery_note')
+               .eq('id', parseInt(selectedOrder.id))
+               .single();
+            if (error) {
+               // not fatal; show console for debugging
+               console.warn('fetchSelectedOrder error', error);
+               return;
+            }
+            if (!mounted || !data) return;
+            setSelectedOrder(prev => prev ? {
+               ...prev,
+               store_invoice_base64: data.store_invoice_base64 || prev.store_invoice_base64,
+               prescription_base64: data.prescription_base64 || prev.prescription_base64,
+               payment_receipt_base64: data.payment_receipt_base64 || prev.payment_receipt_base64,
+               textOrder: data.text_order_notes || prev.textOrder,
+               deliveryNote: data.delivery_note || prev.deliveryNote
+            } : prev);
+         } catch (err) {
+            console.error('Error fetching single order data:', err);
+         }
+      };
+
+      fetchSelectedOrder();
+      return () => { mounted = false; };
+   }, [selectedOrder?.id]);
    const [searchTerm, setSearchTerm] = useState('');
    const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
    const [dateFilter, setDateFilter] = useState('');
@@ -901,13 +1045,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [isRefreshing, setIsRefreshing] = useState(false);
    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
-   // Debounce search term
+   // Balance filter for drivers (24H, 2J, 3J, 4J, 5J, 7J)
+   const [balanceRange, setBalanceRange] = useState<'24H'|'2J'|'3J'|'4J'|'5J'|'7J'>('24H');
+
+   // --- Search input: use uncontrolled input + debounce to avoid re-renders on every keystroke ---
+   const searchInputRef = useRef<HTMLInputElement | null>(null);
+   const searchDebounceRef = useRef<number | null>(null);
+
+   const handleSearchInput = (e: React.FormEvent<HTMLInputElement>) => {
+      const value = (e.target as HTMLInputElement).value;
+      if (searchDebounceRef.current) window.clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = window.setTimeout(() => {
+         setSearchTerm(value);
+      }, 250);
+   };
+
    useEffect(() => {
-      const timer = setTimeout(() => {
-         setDebouncedSearchTerm(searchTerm);
-      }, 300);
-      return () => clearTimeout(timer);
+      // sync debouncedSearchTerm (heavy filters use this)
+      const t = setTimeout(() => setDebouncedSearchTerm(searchTerm), 200);
+      return () => clearTimeout(t);
    }, [searchTerm]);
+
+   // cleanup debounce on unmount
+   useEffect(() => {
+      return () => { if (searchDebounceRef.current) window.clearTimeout(searchDebounceRef.current); };
+   }, []);
 
    // Selection State
    const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -931,6 +1093,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          setDbCategories(propCategories);
       }
    }, [propCategories]);
+
+      
 
    const handleManualRefresh = async () => {
       setIsRefreshing(true);
@@ -958,15 +1122,73 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    }, [propOrders, selectedOrder?.id]);
 
    const localProducts = stores.filter(s => !s.is_deleted).flatMap(s => s.products || []);
+
+   const onEditProduct = useCallback((id: string) => {
+      const prod = localProducts.find(x => x.id === id);
+      if (!prod) return;
+      setEditingProduct(prod);
+      setProductImagePreview(prod.image || null);
+      setProductAdditionalImages(prod.product_images || prod.images || []);
+      setShowAddProduct(true);
+   }, [localProducts]);
+
+   const handleToggleStoreStatus = async (id: string, field: 'is_open' | 'is_active', current: boolean) => {
+      const { error } = await supabase.from('stores').update({ [field]: !current }).eq('id', id);
+      if (error) alert("Erreur: " + error.message);
+      else onBack();
+   };
+
+   const handleDeleteStore = async (store: Store) => {
+      // Compter les produits associés
+      const { data: products, error } = await supabase
+         .from('products')
+         .select('id')
+         .eq('store_id', store.id);
+
+      if (error) {
+         console.error("Erreur lors du comptage des produits:", error);
+      }
+
+      setStoreToDelete(store);
+      setShowDeleteStoreModal(true);
+   };
+
+   // Store handlers (stable references for memoized StoreCard)
+   const onEditStore = useCallback((id: string) => {
+      const s = stores.find(x => x.id === id);
+      if (!s) return;
+      // Normalize older stores that may use `category` instead of `category_id`
+      const normalized = { ...s, category_id: (s as any).category_id || (s as any).category } as Store;
+      setEditingStore(normalized);
+      setStoreImagePreview(null);
+      setShowAddPartner(true);
+   }, [stores]);
+
+   const onToggleOpenStore = useCallback((id: string, current: boolean | undefined) => {
+      handleToggleStoreStatus(id, 'is_open', !!current);
+   }, [handleToggleStoreStatus]);
+
+   const onToggleActiveStore = useCallback((id: string, current: boolean | undefined) => {
+      handleToggleStoreStatus(id, 'is_active', !!current);
+   }, [handleToggleStoreStatus]);
+
+   const onDeleteStoreStable = useCallback((id: string) => {
+      const s = stores.find(x => x.id === id);
+      if (!s) return;
+      handleDeleteStore(s);
+   }, [stores, handleDeleteStore]);
    const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
    const [ribs, setRibs] = useState<RIB[]>([]);
    const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '', email: '' });
    const [showAddRIB, setShowAddRIB] = useState(false);
    const [editingRIB, setEditingRIB] = useState<RIB | null>(null);
    const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
+      
    const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
    const [supportMessages, setSupportMessages] = useState<SupportMessage[]>([]);
    const [replyText, setReplyText] = useState('');
+   const replyInputRef = useRef<HTMLInputElement | null>(null);
+   const [replyHasText, setReplyHasText] = useState(false);
    const [supportFilter, setSupportFilter] = useState<'all' | 'pending' | 'resolved'>('all');
    const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
    const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -1144,6 +1366,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [showDeleteStoreModal, setShowDeleteStoreModal] = useState(false);
    const [storeToDelete, setStoreToDelete] = useState<Store | null>(null);
    const [deleteStorePassword, setDeleteStorePassword] = useState('');
+   const [isDeleting, setIsDeleting] = useState(false);
    useEffect(() => {
       if (editingCategory) {
          setCategoryImagePreview(editingCategory.image_url || null);
@@ -1164,6 +1387,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
    };
    const [storeImagePreview, setStoreImagePreview] = useState<string | null>(null);
+   const [isSavingStore, setIsSavingStore] = useState(false);
    const [productImagesPreviews, setProductImagesPreviews] = useState<string[]>([]);
    const [hasProductsEnabled, setHasProductsEnabled] = useState(false);
    const STORE_UI_FIELD_KEYS = ['gallery', 'custom_note', 'budget', 'image'] as const;
@@ -1173,6 +1397,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    // Unified image management - first image is always the main image
    const [productImagePreview, setProductImagePreview] = useState<string | null>(null);
    const [extractedCoordinates, setExtractedCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+
+   // Prevent background scroll while any modal is open (helps reduce layout thrash)
+   useEffect(() => {
+      const anyModalOpen = showAddPartner || showAddProduct || showAddCategory || showAddRIB || showDeleteStoreModal || showProfileModal || showAddSubCategory;
+      document.body.style.overflow = anyModalOpen ? 'hidden' : '';
+      return () => { document.body.style.overflow = ''; };
+   }, [showAddPartner, showAddProduct, showAddCategory, showAddRIB, showDeleteStoreModal, showProfileModal, showAddSubCategory]);
 
    const USER_UI_FIELD_KEYS = ['name', 'price', 'image', 'description', 'custom_note'] as const;
    const LABEL_ONLY_KEYS = ['name', 'price', 'image', 'description'] as const; // show/hide only, no editable label
@@ -1242,6 +1473,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    useEffect(() => {
       if (!showAddPartner) return;
       if (editingStore) {
+         // Normalize category fields for legacy stores (category vs category_id)
+         if (!(editingStore as any).category_id && (editingStore as any).category) {
+            setEditingStore(prev => prev ? { ...prev, category_id: (prev as any).category } : prev);
+         }
+
          const vis = (editingStore as any).user_visible_fields;
          const lab = (editingStore as any).user_field_labels || {};
          if (Array.isArray(vis)) setStoreUserVisible(prev => ({ ...Object.fromEntries(STORE_UI_FIELD_KEYS.map(k => [k, true])), ...Object.fromEntries(STORE_UI_FIELD_KEYS.map(k => [k, vis.includes(k)])) }));
@@ -1475,7 +1711,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          const visibleFields = USER_UI_FIELD_KEYS.filter(k => productUserVisible[k] !== false);
          const fieldLabels: Record<string, string> = {};
          USER_UI_FIELD_KEYS.forEach(k => {
-            const v = productUserLabels[k]?.trim();
+            const formKey = `product_label_${k}`;
+            const formVal = String(formData.get(formKey) || '');
+            const v = formVal?.trim() || (productUserLabels[k]?.trim() || '');
             if (v) fieldLabels[k] = v;
          });
          const prodData = {
@@ -1646,141 +1884,131 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
    };
 
-   const handleToggleStoreStatus = async (id: string, field: 'is_open' | 'is_active', current: boolean) => {
-      const { error } = await supabase.from('stores').update({ [field]: !current }).eq('id', id);
-      if (error) alert("Erreur: " + error.message);
-      else onBack();
-   };
-
-   const handleDeleteStore = async (store: Store) => {
-      // Compter les produits associés
-      const { data: products, error } = await supabase
-         .from('products')
-         .select('id')
-         .eq('store_id', store.id);
-
-      if (error) {
-         console.error("Erreur lors du comptage des produits:", error);
-      }
-
-      setStoreToDelete(store);
-      setShowDeleteStoreModal(true);
-   };
+   // handleDeleteStore moved earlier to avoid "Cannot access 'handleDeleteStore' before initialization"
+   // (function now declared near the other store handlers).
 
    const confirmDeleteStore = async (e: React.FormEvent) => {
       e.preventDefault();
-      console.log("?? confirmDeleteStore appelée");
+      if (!storeToDelete) return;
 
-      if (!storeToDelete) {
-         console.log("? Aucune marque sélectionnée");
-         return;
-      }
-
-      console.log("?? Marque à supprimer:", storeToDelete.name, storeToDelete.id);
+      setIsDeleting(true);
+      const prevStore = storeToDelete; // capture for potential rollback
+      const storeIdToDelete = prevStore.id;
 
       try {
-         // 1. Vérifier le mot de passe directement dans la base de données
-         // PAS DE VÉRIFICATION DE SESSION - on vérifie juste si le mot de passe existe
-         console.log("?? Mot de passe saisi:", deleteStorePassword);
+         // 1. OPTIMISTIC UPDATE: remove from local UI immediately
+         setStores(prev => prev.filter(s => s.id !== storeIdToDelete));
 
+         // 2. Verify password quickly
          const { data: adminData, error: adminError } = await supabase
             .from('super_admins')
             .select('badge_id, username')
             .eq('badge_id', deleteStorePassword)
             .limit(1);
 
-         console.log("?? Résultat recherche admin:", adminData);
-         console.log("? Erreur recherche:", adminError);
-
-         // Vérifier si un admin avec ce mot de passe existe
          if (adminError || !adminData || adminData.length === 0) {
-            alert("? Mot de passe incorrect !\n\nAucun administrateur trouvé avec ce Badge ID.");
-            console.error("Erreur admin:", adminError);
+            // ROLLBACK: restore the store if password wrong
+            setStores(prev => [prevStore, ...prev]);
+            alert('Mot de passe incorrect !');
             setDeleteStorePassword('');
+            setIsDeleting(false);
             return;
          }
 
-         console.log("? Mot de passe correct ! Admin trouvé:", adminData[0].username);
-         console.log("? Suppression autorisée, démarrage...");
-
-
-
-
-         // 3. Supprimer tous les produits associés (CRITIQUE : Doit être fait avant le store)
-         console.log("??? Suppression des produits associés...");
-         const { error: productsError } = await supabase
-            .from('products')
-            .delete()
-            .eq('store_id', storeToDelete.id);
-
-         if (productsError) {
-            console.error("? Erreur produits:", productsError);
-            alert("Erreur lors de la suppression des produits : " + productsError.message);
-            return;
-         }
-         console.log("? Produits supprimés");
-
-         // 4. Supprimer les favoris associés (CRITIQUE : Sinon erreur fk_favorites)
-         console.log("?? Suppression des favoris...");
-         const { error: favError } = await supabase
-            .from('favorites')
-            .delete()
-            .eq('store_id', storeToDelete.id);
-
-         if (favError) console.warn("?? Erreur suppression favoris (non bloquant):", favError);
-
-         // 5. Détacher les commandes (CRITIQUE : Sinon erreur fk_orders)
-         console.log("?? Détachement des commandes...");
-         const { error: ordersError } = await supabase
-            .from('orders')
-            .update({ store_id: null })
-            .eq('store_id', storeToDelete.id);
-
-         if (ordersError) console.warn("?? Avertissement commandes:", ordersError);
-
-         // 6. SUPPRESSION TOTALE de la marque
-         console.log("?? SUPPRESSION DÉFINITIVE de la marque...");
-         const { error: storeError } = await supabase
-            .from('stores')
-            .delete()
-            .eq('id', storeToDelete.id);
-
-         if (storeError) {
-            console.error("? Erreur suppression marque:", storeError);
-            alert("Impossible de supprimer la marque (vérifiez s'il reste des dépendances) : " + storeError.message);
-            return;
-         }
-
-         console.log("? Marque exterminée avec succès");
-
-         // 7. Fermer le modal et rafraîchir
+         // Close modal immediately so UI is not blocked (deletion continues in background)
          setShowDeleteStoreModal(false);
          setStoreToDelete(null);
          setDeleteStorePassword('');
-         alert("? Marque et toutes ses données associées ont été supprimées définitivement !");
-         console.log("?? Rafraîchissement des données...");
-         onBack();
-         await fetchData();
-         console.log("? Opération terminée !");
+         setIsDeleting(false);
+
+         // 3. Perform DB deletions in background (don't block UI)
+         (async () => {
+            try {
+               const [productsRes, favRes, ordersRes, storeRes] = await Promise.allSettled([
+                  supabase.from('products').delete().eq('store_id', storeIdToDelete),
+                  supabase.from('favorites').delete().eq('store_id', storeIdToDelete),
+                  supabase.from('orders').update({ store_id: null }).eq('store_id', storeIdToDelete),
+                  supabase.from('stores').delete().eq('id', storeIdToDelete)
+               ]);
+
+               // if any of the critical operations failed, rollback locally and notify admin
+               const storeFailed = storeRes.status === 'rejected' || storeRes.value?.error;
+               if (storeFailed) {
+                  setStores(prev => [prevStore, ...prev]);
+                  alert('Erreur suppression marque (rollback effectué)');
+                  return;
+               }
+
+               // success — optionally show a toast here
+               console.info('Store deleted (background):', storeIdToDelete);
+            } catch (bgErr) {
+               console.error('Background deletion error', bgErr);
+               // rollback UI if needed
+               setStores(prev => [prevStore, ...prev]);
+               alert('Erreur lors de la suppression en arrière-plan');
+            }
+         })();
+
       } catch (err) {
-         console.error("?? Erreur fatale lors de la suppression:", err);
-         alert("Une erreur inattendue est survenue : " + (err as any)?.message);
+         // immediate rollback on unexpected error
+         setStores(prev => [prevStore, ...prev]);
+         alert('Erreur: ' + (err instanceof Error ? err.message : 'Inconnu'));
+         setIsDeleting(false);
       }
    };
 
    const handleDeleteDriver = async (id: string) => {
       if (!confirm("Supprimer ce livreur ?")) return;
-      const { error } = await supabase.from('drivers').delete().eq('id', id);
-      if (error) alert("Erreur: " + error.message);
-      else onBack();
+      setIsDeleting(true);
+      try {
+         // Optimistic update
+         setDrivers(prev => prev.filter(d => d.id !== id));
+         const { error } = await supabase.from('drivers').delete().eq('id', id);
+         if (error) {
+            // Rollback
+            const { data } = await supabase.from('drivers').select('*');
+            if (data) setDrivers(data);
+            alert("Erreur: " + error.message);
+            return;
+         }
+      } catch (err) {
+         alert("Erreur: " + (err instanceof Error ? err.message : "Inconnu"));
+      } finally {
+         setIsDeleting(false);
+      }
    };
 
-   const handleDeleteProduct = async (id: string) => {
+   const handleDeleteProduct = useCallback(async (id: string) => {
       if (!confirm("Supprimer ce produit ?")) return;
-      const { error } = await supabase.from('products').delete().eq('id', id);
-      if (error) alert("Erreur: " + error.message);
-      else onBack();
-   };
+      setIsDeleting(true);
+      try {
+         // Optimistic update (local only)
+         setStores(prev => prev.map(s => ({
+            ...s,
+            products: s.products?.filter(p => p.id !== id) || []
+         })));
+
+         const { error } = await supabase.from('products').delete().eq('id', id);
+         if (error) {
+            // Rollback: reload stores from DB
+            const { data: freshStores } = await supabase.from('stores').select('*');
+            if (freshStores) setStores(freshStores as any);
+            alert("Erreur: " + error.message);
+            return;
+         }
+      } catch (err) {
+         // Try a lightweight rollback
+         try {
+            const { data: freshStores } = await supabase.from('stores').select('*');
+            if (freshStores) setStores(freshStores as any);
+         } catch (e) {
+            console.error('Rollback failed', e);
+         }
+         alert("Erreur: " + (err instanceof Error ? err.message : "Inconnu"));
+      } finally {
+         setIsDeleting(false);
+      }
+   }, [setStores]);
 
    const handleUpdateOrderStatus = async (id: string, newStatus: OrderStatus) => {
       const currentOrder = propOrders.find(o => o.id === id);
@@ -1790,9 +2018,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }));
       const newHistoryEntry = { status: newStatus, timestamp: Date.now() };
       const updatedHistory = [...currentHistory, newHistoryEntry];
-
       const isArchivedStatus = newStatus === 'delivered' || newStatus === 'refused' || newStatus === 'unavailable';
 
+      // OPTIMISTIC UPDATE - mise à jour immédiate du state local
+      setPropOrders(prev => prev.map(o => o.id === id ? { 
+         ...o, 
+         status: newStatus, 
+         statusHistory: updatedHistory,
+         isArchived: isArchivedStatus
+      } : o));
+
+      if (selectedOrder && selectedOrder.id === id) {
+         setSelectedOrder(prev => prev ? { ...prev, status: newStatus, statusHistory: updatedHistory, isArchived: isArchivedStatus } : null);
+      }
+
+      // Mise à jour DB en arrière-plan
       const { error } = await supabase
          .from('orders')
          .update({
@@ -1802,39 +2042,52 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          })
          .eq('id', parseInt(id));
 
-      if (error) alert("Erreur: " + error.message);
-      else {
-         // Update local state for both the list and the selected order
-         // The `updatedOrder` variable is not used, but the logic below updates state correctly.
-         // const updatedOrder = currentOrder ? { ...currentOrder, status: newStatus, statusHistory: updatedHistory } : null;
-
-         // Assuming `setPropOrders` exists or `onUpdateStatus` handles the main list update
-         // setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus, statusHistory: updatedHistory } : o));
-
+      if (error) {
+         // ROLLBACK - restaurer l'état précédent
+         setPropOrders(prev => prev.map(o => o.id === id ? currentOrder || o : o));
          if (selectedOrder && selectedOrder.id === id) {
-            setSelectedOrder(prev => prev ? { ...prev, status: newStatus, statusHistory: updatedHistory } : null);
+            setSelectedOrder(selectedOrder);
          }
-
-         // Keep legacy callback if needed, but state update is handled above
+         alert("Erreur mise à jour: " + error.message);
+      } else {
          onUpdateStatus(id, newStatus);
       }
    };
 
    const handleUpdateOrderNotes = async (orderId: string, notes: string) => {
+      // OPTIMISTIC UPDATE
+      if (selectedOrder && selectedOrder.id === orderId) {
+         setSelectedOrder(prev => prev ? { ...prev, textOrder: notes } : null);
+      }
+
+      // DB update en arrière-plan
       const { error } = await supabase.from('orders').update({ text_order_notes: notes }).eq('id', parseInt(orderId));
-      if (error) alert("Erreur: " + error.message);
-      else {
-         alert("Description mise à jour !");
-         onBack(); // Refresh data
+      if (error) {
+         alert("Erreur: " + error.message);
+         // Reload to fix UI if error
+         const { data } = await supabase.from('orders').select('*').eq('id', parseInt(orderId)).single();
+         if (data) setSelectedOrder(data as any);
       }
    };
 
    const handleAssignDriver = async (orderId: string, driverId: string) => {
-      const { error } = await supabase.from('orders').update({ assigned_driver_id: driverId || null }).eq('id', parseInt(orderId));
-      if (error) alert("Erreur: " + error.message);
-      else {
-         onAssignDriver(orderId, driverId);
+      // OPTIMISTIC UPDATE
+      setPropOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: driverId } : o));
+      if (selectedOrder && selectedOrder.id === orderId) {
          setSelectedOrder(prev => prev ? { ...prev, assignedDriverId: driverId } : null);
+      }
+
+      // DB update en arrière-plan
+      const { error } = await supabase.from('orders').update({ assigned_driver_id: driverId || null }).eq('id', parseInt(orderId));
+      if (error) {
+         alert("Erreur: " + error.message);
+         // Rollback
+         setPropOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: undefined } : o));
+         if (selectedOrder && selectedOrder.id === orderId) {
+            setSelectedOrder(prev => prev ? { ...prev, assignedDriverId: undefined } : null);
+         }
+      } else {
+         onAssignDriver(orderId, driverId);
       }
    };
 
@@ -2008,82 +2261,159 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
    const handleCreateStore = async (e: React.FormEvent) => {
       e.preventDefault();
+      if (isSavingStore) return;
+      setIsSavingStore(true);
+
       const form = e.target as HTMLFormElement;
       const formData = new FormData(form);
 
-      let storeImageURL = editingStore ? editingStore.image_url : (formData.get('image_url') as string);
+      // Local preview URL (can be a data: URI) used for optimistic UI
+      const localPreviewUrl = storeImagePreview || editingStore?.image_url || '';
 
-      try {
-         if (storeImagePreview && storeImagePreview.startsWith('data:')) {
-            const blob = await dataUrlToBlob(storeImagePreview);
-            const fileName = `store_${Date.now()}.png`;
-            const { data, error: uploadError } = await supabase.storage.from('stores').upload(fileName, blob);
-            if (uploadError) {
-               alert(`Erreur upload store : ${uploadError.message}`);
-               return;
-            }
-            if (data) {
-               storeImageURL = supabase.storage.from('stores').getPublicUrl(fileName).data.publicUrl;
-            }
-         }
-
-         const storeVisibleFields = STORE_UI_FIELD_KEYS.filter(k => storeUserVisible[k] !== false);
-         const storeFieldLabels: Record<string, string> = {};
-         STORE_UI_FIELD_KEYS.forEach(k => {
-            const v = storeUserLabels[k]?.trim();
-            if (v) storeFieldLabels[k] = v;
+      // Build the canonical store data to persist (do NOT include data: URIs in DB)
+      const storeVisibleFields = STORE_UI_FIELD_KEYS.filter(k => storeUserVisible[k] !== false);
+      const storeFieldLabels: Record<string, string> = {};
+      STORE_UI_FIELD_KEYS.forEach(k => {
+            // prefer form values (user may have typed and not blurred) else fallback to state
+            const formKey = `user_label_${k}`;
+            const formVal = String(formData.get(formKey) || '');
+            const val = formVal?.trim() || (storeUserLabels[k]?.trim() || '');
+            if (val) storeFieldLabels[k] = val;
          });
-         if (storeUserLabels.custom_order_description?.trim()) storeFieldLabels.custom_order_description = storeUserLabels.custom_order_description.trim();
-         const storeData: any = {
-            name: formData.get('name') as string,
-            category_id: formData.get('category_id') as string,
-            sub_category: formData.get('sub_category') as string,
-            delivery_time_min: parseInt(formData.get('delivery_time_min') as string),
-            delivery_fee: parseFloat(formData.get('delivery_fee') as string),
-            maps_url: formData.get('maps_url') as string,
-            image_url: storeImageURL,
-            is_active: true,
-            is_open: true,
-            is_featured: formData.get('is_featured') === 'on',
-            is_new: formData.get('is_new') === 'on',
-            has_products: formData.get('has_products') === 'on',
-            description: formData.get('description') as string,
-            latitude: extractedCoordinates?.lat || null,
-            longitude: extractedCoordinates?.lng || null,
-            user_visible_fields: storeVisibleFields,
-            user_field_labels: Object.keys(storeFieldLabels).length ? storeFieldLabels : {}
-         };
+         const formCustomOrder = String(formData.get('custom_order_description') || '');
+         const customOrderVal = formCustomOrder.trim() || (storeUserLabels.custom_order_description?.trim() || '');
+         if (customOrderVal) storeFieldLabels.custom_order_description = customOrderVal;
+      const storeData: any = {
+         name: formData.get('name') as string,
+         category_id: formData.get('category_id') as string,
+         sub_category: formData.get('sub_category') as string,
+         delivery_time_min: parseInt(formData.get('delivery_time_min') as string),
+         delivery_fee: parseFloat(formData.get('delivery_fee') as string),
+         maps_url: formData.get('maps_url') as string,
+         // keep DB image_url empty for now if we're uploading a data URI — we'll patch later
+         image_url: editingStore?.image_url || '',
+         is_active: true,
+         is_open: true,
+         is_featured: formData.get('is_featured') === 'on',
+         is_new: formData.get('is_new') === 'on',
+         has_products: formData.get('has_products') === 'on',
+         description: formData.get('description') as string,
+         latitude: extractedCoordinates?.lat || null,
+         longitude: extractedCoordinates?.lng || null,
+         user_visible_fields: storeVisibleFields,
+         user_field_labels: Object.keys(storeFieldLabels).length ? storeFieldLabels : {}
+      };
 
-         if (editingStore) {
-            const { error } = await supabase.from('stores').update(storeData).eq('id', editingStore.id);
-            if (error) alert("Erreur: " + error.message);
-            else {
-               setShowAddPartner(false);
-               setEditingStore(null);
-               setStoreImagePreview(null);
-               onBack();
+      // --- OPTIMISTIC UI: show new/updated store immediately in list ---
+      if (editingStore) {
+         const prevStore = editingStore;
+         const optimistic = { ...prevStore, ...storeData, image_url: localPreviewUrl } as Store;
+         setStores(prev => prev.map(s => s.id === prevStore.id ? optimistic : s));
+
+         // close UI right away
+         setShowAddPartner(false);
+         setEditingStore(null);
+         setStoreImagePreview(null);
+         onBack();
+
+         // Persist in background
+         (async () => {
+            try {
+               const { error: updateError } = await supabase.from('stores').update(storeData).eq('id', prevStore.id);
+               if (updateError) {
+                  // rollback optimistic change
+                  setStores(prev => prev.map(s => s.id === prevStore.id ? prevStore : s));
+                  alert('Erreur: ' + updateError.message);
+                  return;
+               }
+
+               // If user provided an image (data URI), upload then patch image_url
+               if (storeImagePreview && storeImagePreview.startsWith('data:')) {
+                  const blob = await dataUrlToBlob(storeImagePreview);
+                  const fileName = `store_${Date.now()}.png`;
+                  const { data: uploadData, error: uploadError } = await supabase.storage.from('stores').upload(fileName, blob);
+                  if (!uploadError && uploadData) {
+                     const publicUrl = supabase.storage.from('stores').getPublicUrl(fileName).data.publicUrl;
+                     await supabase.from('stores').update({ image_url: publicUrl }).eq('id', prevStore.id);
+                     setStores(prev => prev.map(s => s.id === prevStore.id ? { ...s, image_url: publicUrl } : s));
+                  } else if (uploadError) {
+                     console.warn('store image upload failed (background):', uploadError.message);
+                  }
+               }
+            } catch (err) {
+               console.error('Background update store failed', err);
+               // rollback
+               setStores(prev => prev.map(s => s.id === prevStore.id ? prevStore : s));
+            } finally {
+               setIsSavingStore(false);
             }
-         } else {
-            const { error } = await supabase.from('stores').insert([storeData]);
-            if (error) alert("Erreur: " + error.message);
-            else {
-               setShowAddPartner(false);
-               setStoreImagePreview(null);
-               onBack();
+         })();
+      } else {
+         // creating new store: optimistic add with temporary id
+         const tempId = `tmp-${Date.now()}`;
+         const optimisticNew: any = { ...storeData, id: tempId, image_url: localPreviewUrl, name: storeData.name };
+         setStores(prev => [optimisticNew, ...prev]);
+
+         // close UI immediately for snappy UX
+         setShowAddPartner(false);
+         setStoreImagePreview(null);
+         onBack();
+
+         // Persist in background (insert -> optionally upload image -> patch)
+         (async () => {
+            try {
+               const { data: inserted, error: insertError } = await supabase.from('stores').insert([storeData]).select().single();
+               if (insertError || !inserted) {
+                  // remove optimistic entry
+                  setStores(prev => prev.filter(s => s.id !== tempId));
+                  alert('Erreur: ' + (insertError?.message || 'Impossible de créer le magasin'));
+                  return;
+               }
+
+               // replace temporary item with real DB row
+               const real = { ...inserted, id: String((inserted as any).id) } as Store;
+               setStores(prev => prev.map(s => s.id === tempId ? real : s));
+
+               // If user provided an image (data URI), upload then patch image_url
+               if (storeImagePreview && storeImagePreview.startsWith('data:')) {
+                  try {
+                     const blob = await dataUrlToBlob(storeImagePreview);
+                     const fileName = `store_${Date.now()}.png`;
+                     const { data: uploadData, error: uploadError } = await supabase.storage.from('stores').upload(fileName, blob);
+                     if (!uploadError && uploadData) {
+                        const publicUrl = supabase.storage.from('stores').getPublicUrl(fileName).data.publicUrl;
+                        await supabase.from('stores').update({ image_url: publicUrl }).eq('id', real.id);
+                        setStores(prev => prev.map(s => s.id === real.id ? { ...s, image_url: publicUrl } : s));
+                     } else if (uploadError) {
+                        console.warn('store image upload failed (background):', uploadError.message);
+                     }
+                  } catch (err) {
+                     console.error('Background store image upload failed', err);
+                  }
+               }
+            } catch (err) {
+               console.error('Background insert store failed', err);
+               setStores(prev => prev.filter(s => s.id !== tempId));
+               alert('Erreur lors de la création du partenaire');
+            } finally {
+               setIsSavingStore(false);
             }
-         }
-      } catch (err) {
-         alert("Erreur lors de la création du partenaire");
+         })();
       }
    };
 
    const displayOrders = useMemo(() => {
+      const terminalStatuses = ['delivered', 'refused', 'unavailable'];
+      
       const filtered = propOrders.filter(o => {
-         const isHistory = o.isArchived || o.status === 'delivered';
+         // HISTORY: show archived orders OR orders with terminal status (delivered, refused, unavailable)
          if (activeTab === 'HISTORY') {
-            if (!isHistory) return false;
+            const isTerminal = terminalStatuses.includes(o.status);
+            if (!o.isArchived && !isTerminal) return false;
          } else if (activeTab === 'ORDERS') {
-            if (isHistory) return false;
+            // ORDERS: show non-archived orders with active status (not terminal)
+            const isTerminal = terminalStatuses.includes(o.status);
+            if (o.isArchived || isTerminal) return false;
          }
 
          const matchesSearch = o.customerName.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) || o.id.includes(debouncedSearchTerm);
@@ -2093,10 +2423,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          return matchesSearch && matchesStatus && matchesStore && matchesDate;
       });
       
-      // Log pour déboguer
+      // Log for debugging
       if (activeTab === 'HISTORY') {
          const invoicesCount = filtered.filter(o => o.store_invoice_base64)?.length || 0;
-         console.log(`HISTORY Tab: ${filtered.length} commandes, ${invoicesCount} avec factures`);
+         console.log(`HISTORY Tab: ${filtered.length} orders (archived or terminal status), ${invoicesCount} with invoices`);
+      }
+      if (activeTab === 'ORDERS') {
+         console.log(`ORDERS Tab: ${filtered.length} active orders displayed (non-archived, non-terminal)`);
       }
       
       return filtered;
@@ -2105,6 +2438,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const startIndex = (currentPage - 1) * itemsPerPage;
    const paginatedOrders = useMemo(() => displayOrders.slice(startIndex, startIndex + itemsPerPage), [displayOrders, startIndex, itemsPerPage]);
    const totalPages = useMemo(() => Math.ceil(displayOrders.length / itemsPerPage), [displayOrders.length, itemsPerPage]);
+
+      // Diagnostic: when admin opens ORDERS tab, log counts and active filters to help debugging
+      useEffect(() => {
+         if (activeTab !== 'ORDERS') return;
+         console.log('DEBUG ORDERS VIEW — propOrders count:', propOrders.length, 'displayOrders count:', displayOrders.length, 'paginated:', paginatedOrders.length);
+         console.log('DEBUG ORDERS FILTERS', { statusFilter, storeFilter, dateFilter, search: debouncedSearchTerm });
+         if (propOrders.length > 0 && displayOrders.length === 0) {
+            console.warn('There are orders in the dataset but none match the current filters — try clearing search/date/status/store filters.');
+         }
+      }, [activeTab, propOrders.length, displayOrders.length, paginatedOrders.length, statusFilter, storeFilter, dateFilter, debouncedSearchTerm]);
 
    // --- GLOBAL SEARCH FILTERS ---
    const lowerSearch = debouncedSearchTerm.toLowerCase();
@@ -2119,6 +2462,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       (d.full_name && d.full_name.toLowerCase().includes(lowerSearch)) ||
       (d.phone || '').includes(lowerSearch)
    ), [localDrivers, lowerSearch]);
+
+   const balanceRangeMs = useMemo(() => {
+      if (balanceRange === '24H') return 24 * 60 * 60 * 1000;
+      const days = parseInt(balanceRange.replace('J', '')) || 1;
+      return days * 24 * 60 * 60 * 1000;
+   }, [balanceRange]);
 
    const filteredStores = useMemo(() => stores.filter(s =>
       (s.name || '').toLowerCase().includes(lowerSearch) ||
@@ -2143,6 +2492,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          (t.description && t.description.toLowerCase().includes(lowerSearch));
       return matchesStatus && matchesSearch;
    }), [supportTickets, supportFilter, lowerSearch]);
+
+   // Memoized rendered lists (declared unconditionally to preserve Hooks order)
+   const memoizedStoreCards = useMemo(() => filteredStores.map(s => (
+      <StoreCard
+         key={s.id}
+         id={s.id}
+         image_url={s.image_url}
+         image={s.image}
+         name={s.name}
+         category_id={s.category_id}
+         latitude={s.latitude}
+         longitude={s.longitude}
+         is_open={s.is_open}
+         is_active={s.is_active}
+         rating={s.rating}
+         onEdit={onEditStore}
+         onToggleOpen={onToggleOpenStore}
+         onToggleActive={onToggleActiveStore}
+         onDelete={onDeleteStoreStable}
+      />
+   )), [filteredStores, onEditStore, onToggleOpenStore, onToggleActiveStore, onDeleteStoreStable]);
+
+   const memoizedProductCards = useMemo(() => filteredProducts.map((p) => (
+      <ProductCard
+         key={p.id}
+         id={p.id}
+         name={p.name}
+         storeName={p.storeName}
+         price={p.price}
+         image={p.image}
+         onEdit={onEditProduct}
+         onDelete={handleDeleteProduct}
+      />
+   )), [filteredProducts, onEditProduct, handleDeleteProduct]);
 
    const prepareShareText = (order: Order) => {
       const itemsText = order.items.length > 0
@@ -2570,14 +2953,15 @@ ${itemsText}
    };
 
    const handleReplyTicket = async () => {
-      if (!selectedTicket || !replyText.trim()) return;
+      const message = replyInputRef.current?.value?.trim() || '';
+      if (!selectedTicket || !message) return;
 
       const { error } = await supabase
          .from('support_messages')
          .insert({
             ticket_id: selectedTicket.id,
             sender_type: 'admin',
-            message: replyText.trim()
+            message
          });
 
       if (error) {
@@ -2585,11 +2969,13 @@ ${itemsText}
       } else {
          // Update last reply on ticket for list view
          await supabase.from('support_tickets').update({
-            admin_reply: replyText.trim(),
+            admin_reply: message,
             responded_at: new Date().toISOString()
          }).eq('id', selectedTicket.id);
 
-         setReplyText('');
+         // clear uncontrolled input and UI flag
+         if (replyInputRef.current) replyInputRef.current.value = '';
+         setReplyHasText(false);
       }
    };
 
@@ -2618,6 +3004,7 @@ ${itemsText}
                   <NavItem active={activeTab === 'STATISTICS'} onClick={() => setActiveTab('STATISTICS')} icon={<BarChart3 size={20} />} label="Statistiques" />
                )}
                <NavItem active={activeTab === 'HISTORY'} onClick={() => setActiveTab('HISTORY')} icon={<Clock size={20} />} label="Historique" badge={propOrders.filter(o => o.isArchived).length} />
+               
                <NavItem active={activeTab === 'CATEGORIES'} onClick={() => setActiveTab('CATEGORIES')} icon={<Filter size={20} />} label="Catégories" />
                <NavItem active={activeTab === 'CONFIG'} onClick={() => setActiveTab('CONFIG')} icon={<Settings size={20} />} label="Configuration" />
                <NavItem
@@ -2644,7 +3031,7 @@ ${itemsText}
             <header className="h-16 bg-white border-b flex items-center justify-between px-8 sticky top-0 z-30">
                <div className="flex items-center gap-4 flex-1 max-w-xl">
                   <Search className="text-slate-400" size={16} />
-                  <input type="text" placeholder="Rechercher..." className="bg-transparent border-none outline-none text-sm w-full" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                  <input ref={searchInputRef} type="text" placeholder="Rechercher..." className="bg-transparent border-none outline-none text-sm w-full" defaultValue={searchTerm} onInput={handleSearchInput} onKeyDown={e => { if ((e as React.KeyboardEvent).key === 'Escape') { const el = e.target as HTMLInputElement; el.value = ''; setSearchTerm(''); } }} />
                </div>
                <button
                   onClick={() => setShowProfileModal(true)}
@@ -2924,6 +3311,8 @@ ${itemsText}
                      )}
                   </div>
                )}
+
+               
 
                {/* FINANCE (RESTAURÉE) */}
                {activeTab === 'FINANCE' && (
@@ -3263,7 +3652,20 @@ ${itemsText}
                {activeTab === 'DRIVERS' && (
                   <div className="space-y-6">
                      <div className="flex justify-between items-center">
-                        <h3 className="text-xl font-black uppercase">Gestion des Livreurs</h3>
+                        <div className="flex items-center gap-6">
+                           <h3 className="text-xl font-black uppercase">Gestion des Livreurs</h3>
+                           <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-full">
+                              {['24H','2J','3J','4J','5J','7J'].map(opt => (
+                                 <button
+                                    key={opt}
+                                    onClick={() => setBalanceRange(opt as any)}
+                                    className={`px-3 py-1 rounded-full text-[12px] font-bold ${balanceRange === opt ? 'bg-slate-900 text-white' : 'bg-white text-slate-500 border'}`}
+                                 >
+                                    {opt}
+                                 </button>
+                              ))}
+                           </div>
+                        </div>
                         <button onClick={() => { setEditingDriver(null); setShowAddDriver(true); }} className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600">
                            <Plus size={16} /> Nouveau Livreur
                         </button>
@@ -3276,6 +3678,8 @@ ${itemsText}
                                  <th className="px-8 py-5">Livreur</th>
                                  <th className="px-8 py-5">Statut</th>
                                  <th className="px-8 py-5">Livraisons</th>
+                                 <th className="px-8 py-5">Balance</th>
+                                 <th className="px-8 py-5">Total livraisons</th>
                                  <th className="px-8 py-5">Évaluation</th>
                                  <th className="px-8 py-5">Warnings</th>
                                  <th className="px-8 py-5 text-right">Actions</th>
@@ -3298,6 +3702,34 @@ ${itemsText}
                                     <td className="px-8 py-5 font-bold">
                                        {propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered').length}
                                     </td>
+                                    <td className="px-8 py-5">
+                                       {(() => {
+                                          const windowStart = Date.now() - balanceRangeMs;
+                                          const balanceOrders = propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered' && (o.timestamp || 0) >= windowStart);
+                                          const balanceTotal = balanceOrders.reduce((s, o) => s + (o.total || 0), 0);
+                                          return (
+                                             <div className="flex flex-col">
+                                                <span className="font-black">{Math.round(balanceTotal)} DH</span>
+                                                <span className="text-[10px] text-slate-400">{balanceOrders.length} commandes</span>
+                                             </div>
+                                          );
+                                       })()}
+                                    </td>
+
+                                    <td className="px-8 py-5">
+                                       {(() => {
+                                          const windowStart = Date.now() - balanceRangeMs;
+                                          const feeOrders = propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered' && (o.timestamp || 0) >= windowStart);
+                                          const totalFees = feeOrders.reduce((s, o) => s + (o.delivery_fee ?? 0), 0);
+                                          return (
+                                             <div className="flex flex-col">
+                                                <span className="font-black">{Math.round(totalFees)} DH</span>
+                                                <span className="text-[10px] text-slate-400">{feeOrders.length} livr.</span>
+                                             </div>
+                                          );
+                                       })()}
+                                    </td>
+
                                     <td className="px-8 py-5">
                                        {(() => {
                                           const driverRatings = propOrders.filter(o => o.assignedDriverId === d.id && o.driverRating).map(o => o.driverRating!);
@@ -3363,82 +3795,24 @@ ${itemsText}
                         </button>
                      </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {filteredStores.map(s => (
-                           <div key={s.id} className="bg-white p-6 rounded-[2.5rem] border shadow-sm space-y-4">
-                              <div className="flex items-center gap-4">
-                                 <img src={s.image_url || s.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} loading="lazy" className="w-16 h-16 rounded-[1.25rem] object-cover" />
-                                 <div className="flex-1">
-                                    <h4 className="font-black text-lg">{s.name}</h4>
-                                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{s.category_id}</p>
-                                    {(s.latitude && s.longitude) ? (
-                                       <div className="flex items-center gap-1 mt-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg w-fit">
-                                          <MapPin size={10} />
-                                          <span className="text-[9px] font-mono font-bold">{s.latitude.toFixed(4)}, {s.longitude.toFixed(4)}</span>
-                                       </div>
-                                    ) : (
-                                       <div className="flex items-center gap-1 mt-1 text-slate-400 bg-slate-50 px-2 py-1 rounded-lg w-fit">
-                                          <MapPin size={10} />
-                                          <span className="text-[9px] font-mono">Pas de coordonnées</span>
-                                       </div>
-                                    )}
-                                 </div>
-                                 <div className="flex flex-col gap-2">
-                                    <button onClick={() => handleToggleStoreStatus(s.id, 'is_open', !!s.is_open)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${s.is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                                       {s.is_open ? 'Ouvert' : 'Fermé'}
-                                    </button>
-                                    <button onClick={() => handleToggleStoreStatus(s.id, 'is_active', !!s.is_active)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${s.is_active ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                                       {s.is_active ? 'Visible' : 'Caché'}
-                                    </button>
-                                 </div>
-                              </div>
-                              <div className="flex justify-between items-center pt-4 border-t">
-                                 <div className="flex items-center gap-1 text-orange-500"><Star size={14} fill="currentColor" /><span className="text-xs font-black">{s.rating || '4.5'}</span></div>
-                                 <div className="flex gap-2">
-                                    <button onClick={() => { setEditingStore(s); setStoreImagePreview(null); setShowAddPartner(true); }} className="p-2 bg-slate-100 rounded-lg"><Edit3 size={16} /></button>
-                                    <button onClick={() => handleDeleteStore(s)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 size={16} /></button>
-                                 </div>
-                              </div>
-                           </div>
-                        ))}
+                        {memoizedStoreCards}
                      </div>
                   </div>
                )}
 
                {/* CATALOGUE */}
                {activeTab === 'PRODUCTS' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8" style={{willChange: 'transform'}}>
                      <div onClick={() => {
                         setEditingProduct(null);
                         setProductImagePreview(null);
                         setProductAdditionalImages([]);
                         setShowAddProduct(true);
-                     }} className="bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 p-8 flex flex-col items-center justify-center gap-3 cursor-pointer">
+                     }} className="bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 p-8 flex flex-col items-center justify-center gap-3 cursor-pointer will-change-transform">
                         <Plus size={32} className="text-slate-300" />
                         <span className="font-black text-[10px] text-slate-400 uppercase tracking-widest">Ajouter un produit</span>
                      </div>
-                     {filteredProducts.map((p, idx) => (
-                        <div key={p.id || idx} className="bg-white rounded-[2.5rem] border p-4 group hover:shadow-xl transition-all relative overflow-hidden">
-                           <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                              <button onClick={() => {
-                                 setEditingProduct(p);
-                                 // Charger l'image principale
-                                 setProductImagePreview(p.image || null);
-                                 // Charger les images additionnelles
-                                 const additionalImages = p.product_images || p.images || [];
-                                 setProductAdditionalImages(additionalImages);
-                                 setShowAddProduct(true);
-                              }} className="p-2 bg-white/90 backdrop-blur-sm text-slate-600 rounded-xl shadow-lg hover:text-orange-600"><Edit3 size={16} /></button>
-
-                              <button onClick={() => handleDeleteProduct(p.id)} className="p-2 bg-white/90 backdrop-blur-sm text-red-500 rounded-xl shadow-lg hover:bg-red-50"><Trash2 size={16} /></button>
-                           </div>
-                           <img src={p.image} loading="lazy" className="w-full h-40 object-cover rounded-[1.75rem] mb-4" />
-                           <div className="p-2">
-                              <h4 className="font-black text-slate-800 text-sm mb-1 truncate">{p.name}</h4>
-                              <p className="text-[10px] text-slate-400 mb-2 truncate">{p.storeName || 'Marque inconnue'}</p>
-                              <div className="flex justify-between items-center text-orange-600 font-black">{p.price} DH</div>
-                           </div>
-                        </div>
-                     ))}
+                     {memoizedProductCards}
                   </div>
                )}
 
@@ -3603,6 +3977,66 @@ ${itemsText}
                                  Tout le Maroc
                                  <div className="text-[10px] text-slate-500 mt-2 font-normal">Pas de limite géographique</div>
                               </button>
+                           </div>
+                        </div>
+                     </div>
+
+                     {/* DELIVERY FEE PER KM */}
+                     <div className="bg-white rounded-[3rem] border p-10 shadow-sm space-y-6">
+                        <div className="flex items-center gap-3">
+                           <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl"><DollarSign size={20} /></div>
+                           <h3 className="font-black text-slate-800 uppercase text-xs tracking-[0.2em]">Frais de livraison — DH / km</h3>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                           <div className="md:col-span-1 space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Prix par km (DH)</label>
+                              <input
+                                 type="number"
+                                 step="0.5"
+                                 min={0}
+                                 value={feePerKm}
+                                 onChange={e => setFeePerKm(Number(e.target.value))}
+                                 className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-6 font-bold focus:border-orange-500 outline-none transition-all"
+                              />
+                           </div>
+
+                           <div className="md:col-span-1 space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Exemple</label>
+                              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 font-bold">
+                                 <div className="text-sm">10 km → <span className="text-orange-600">{(10 * feePerKm).toFixed(2)} DH</span></div>
+                                 <div className="text-xs text-slate-400">(calculé automatiquement)</div>
+                              </div>
+                           </div>
+
+                           <div className="md:col-span-1 flex flex-col gap-3 md:items-end">
+                              <p className="text-[10px] text-slate-500">Ce tarif sera utilisé pour calculer les frais de livraison par distance (si implémenté côté client/serveur).</p>
+                              <div className="flex gap-2 items-center">
+                                 <button onClick={() => { setFeePerKm(typeof propDeliveryFeePerKm !== 'undefined' ? propDeliveryFeePerKm : 3); setSavedFeePerKm(false); }} className="px-6 py-3 bg-white border rounded-2xl text-sm font-black">Annuler</button>
+                                 <button
+                                    onClick={async () => {
+                                       try {
+                                          setSavingFeePerKm(true);
+                                          setSavedFeePerKm(false);
+                                          await onUpdateSettings('delivery_fee_per_km', String(feePerKm));
+                                          setSavedFeePerKm(true);
+                                          // refresh parent settings
+                                          onBack();
+                                          setTimeout(() => setSavedFeePerKm(false), 2000);
+                                       } catch (err) {
+                                          console.error('Failed to save delivery_fee_per_km', err);
+                                          alert('Erreur lors de la sauvegarde des paramètres.');
+                                       } finally {
+                                          setSavingFeePerKm(false);
+                                       }
+                                    }}
+                                    className={`px-6 py-3 rounded-2xl text-sm font-black ${savingFeePerKm ? 'bg-slate-400 text-white cursor-wait' : 'bg-slate-900 text-white'}`}
+                                    disabled={savingFeePerKm}
+                                 >
+                                    {savingFeePerKm ? 'Enregistrement...' : 'Enregistrer'}
+                                 </button>
+                                 {savedFeePerKm && <span className="text-xs text-emerald-600 font-black ml-2">Enregistré ✓</span>}
+                              </div>
                            </div>
                         </div>
                      </div>
@@ -3791,7 +4225,7 @@ ${itemsText}
 
          {/* MODAL SUPPORT TICKET */}
          {selectedTicket && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedTicket(null)}>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60" onClick={() => setSelectedTicket(null)}>
                <div className="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
                   <header className="p-8 border-b bg-slate-50 flex justify-between items-center">
                      <h3 className="font-black text-lg uppercase tracking-tight text-slate-800">Support Ticket Details</h3>
@@ -3861,16 +4295,17 @@ ${itemsText}
                      <div className="p-4 bg-slate-50 border-t shrink-0">
                         <div className="relative flex items-center gap-2">
                            <input
-                              className="flex-1 bg-white border border-slate-200 focus:border-orange-500 rounded-2xl px-5 py-3 text-sm font-bold outline-none transition-all pr-12 shadow-sm"
+                              ref={replyInputRef}
+                              className="flex-1 bg-white border border-slate-200 focus:border-orange-500 rounded-2xl px-5 py-3 text-sm font-bold outline-none transition-colors pr-12 shadow-sm"
                               placeholder="Écrivez votre réponse..."
-                              value={replyText}
-                              onChange={e => setReplyText(e.target.value)}
-                              onKeyDown={e => e.key === 'Enter' && handleReplyTicket()}
+                              defaultValue={replyText}
+                              onInput={e => setReplyHasText(((e.target as HTMLInputElement).value || '').trim().length > 0)}
+                              onKeyDown={e => (e as React.KeyboardEvent).key === 'Enter' && handleReplyTicket()}
                            />
                            <button
                               onClick={handleReplyTicket}
-                              disabled={!replyText.trim()}
-                              className="absolute right-1.5 p-2 bg-slate-900 text-white rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-all"
+                              disabled={!replyHasText}
+                              className="absolute right-1.5 p-2 bg-slate-900 text-white rounded-xl hover:bg-orange-600 disabled:opacity-50 transition-colors"
                            >
                               <ChevronRight size={18} />
                            </button>
@@ -3885,8 +4320,8 @@ ${itemsText}
          {
             showDeleteStoreModal && storeToDelete && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                  <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={() => setShowDeleteStoreModal(false)}></div>
-                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                  <div className="absolute inset-0 bg-slate-900/80 transition-opacity duration-150" onClick={() => setShowDeleteStoreModal(false)}></div>
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-lg overflow-hidden transition-transform transition-opacity duration-200 ease-out transform-gpu" style={{willChange: 'transform, opacity'}}>
                      <header className="p-8 border-b flex justify-between items-center bg-red-50">
                         <div className="flex items-center gap-3">
                            <div className="p-3 bg-red-100 text-red-600 rounded-2xl">
@@ -3902,7 +4337,7 @@ ${itemsText}
                         {/* Informations sur la marque */}
                         <div className="bg-slate-50 p-6 rounded-2xl border-l-4 border-red-500 space-y-3">
                            <div className="flex items-center gap-3">
-                              <img src={storeToDelete.image_url || storeToDelete.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} className="w-14 h-14 rounded-xl object-cover border-2 border-red-200" />
+                              <img src={storeToDelete.image_url || storeToDelete.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} width={56} height={56} decoding="async" className="w-14 h-14 rounded-xl object-cover border-2 border-red-200" style={{willChange: 'opacity, transform'}} />
                               <div>
                                  <h4 className="font-black text-lg text-slate-800">{storeToDelete.name}</h4>
                                  <p className="text-xs text-slate-500 uppercase tracking-wider">{storeToDelete.category_id}</p>
@@ -3939,7 +4374,7 @@ ${itemsText}
                               placeholder="Entrez votre badge ID..."
                               required
                               autoFocus
-                              className="w-full bg-slate-50 border-2 border-slate-200 focus:border-red-500 outline-none rounded-2xl py-4 px-6 font-bold transition-all text-slate-800 placeholder:text-slate-300"
+                              className="w-full bg-slate-50 border-2 border-slate-200 focus:border-red-500 outline-none rounded-2xl py-4 px-6 font-bold transition-colors duration-150 text-slate-800 placeholder:text-slate-300"
                            />
                            <p className="text-[10px] text-slate-400 italic">Pour des raisons de sécurité, veuillez confirmer votre identité</p>
                         </div>
@@ -3949,16 +4384,26 @@ ${itemsText}
                            <button
                               type="button"
                               onClick={() => { setShowDeleteStoreModal(false); setDeleteStorePassword(''); }}
-                              className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-[1.75rem] font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-all"
+                              className="flex-1 bg-slate-100 text-slate-600 py-4 rounded-[1.75rem] font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors duration-150"
                            >
                               Annuler
                            </button>
                            <button
                               type="submit"
-                              className="flex-1 bg-red-600 text-white py-4 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+                              disabled={isDeleting}
+                              className="flex-1 bg-red-600 text-white py-4 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150 flex items-center justify-center gap-2"
                            >
-                              <Trash2 size={16} />
-                              Supprimer Définitivement
+                              {isDeleting ? (
+                                 <>
+                                    <Loader2 size={16} className="animate-spin" />
+                                    Suppression...
+                                 </>
+                              ) : (
+                                 <>
+                                    <Trash2 size={16} />
+                                    Supprimer Définitivement
+                                 </>
+                              )}
                            </button>
                         </div>
                      </form>
@@ -3971,7 +4416,7 @@ ${itemsText}
          {
             showAddRIB && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddRIB(false)}></div>
+                  <div className="absolute inset-0 bg-slate-900/60 transition-opacity duration-150" onClick={() => setShowAddRIB(false)}></div>
                   <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingRIB ? 'Modifier' : 'Nouveau'} RIB</h3>
@@ -4002,7 +4447,7 @@ ${itemsText}
          {/* MODAL COMMANDE */}
          {selectedOrder && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center">
-               <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedOrder(null)}></div>
+               <div className="absolute inset-0 bg-slate-900/60" onClick={() => setSelectedOrder(null)}></div>
                <div className="relative w-full h-screen bg-white shadow-2xl overflow-y-auto">
                   <header className="sticky top-0 bg-white/90 backdrop-blur-md z-10 px-12 py-8 border-b flex justify-between items-center">
                      <div className="flex items-center gap-4">
@@ -4122,7 +4567,7 @@ ${itemsText}
                                  <MapPin size={16} />
                                  <p className="text-[10px] font-black uppercase tracking-widest">Note de Livraison</p>
                               </div>
-                              <div className="bg-white/80 backdrop-blur-sm p-6 rounded-2xl border border-blue-100/50">
+                              <div className="bg-white/80 p-6 rounded-2xl border border-blue-100/50">
                                  <p className="text-sm font-bold text-blue-950 leading-relaxed whitespace-pre-wrap break-words">
                                     {selectedOrder.deliveryNote}
                                  </p>
@@ -4134,8 +4579,8 @@ ${itemsText}
                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         {/* Facture - Store Invoice */}
                         <div className="lg:col-span-1 space-y-6">
-                           <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-900 shadow-sm h-full">
-                              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest mb-8 flex items-center gap-2">
+                           <div className="bg-white p-8 rounded-[2.5rem] border-2 border-slate-900 shadow-sm h-full space-y-6">
+                              <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
                                  <FileText size={14} /> Facture du Magasin
                               </h4>
                               {(() => {
@@ -4421,7 +4866,7 @@ ${itemsText}
          {
             showAddDriver && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddDriver(false)}></div>
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddDriver(false)}></div>
                   <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingDriver ? 'Modifier' : 'Nouveau'} Livreur</h3>
@@ -4590,7 +5035,7 @@ ${itemsText}
          {
             showAddProduct && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddProduct(false)}></div>
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddProduct(false)}></div>
                   <div className="relative bg-white w-full max-w-2xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingProduct ? 'Modifier' : 'Nouveau'} Produit</h3>
@@ -4748,10 +5193,11 @@ ${itemsText}
                                     </label>
                                     {!LABEL_ONLY_KEYS.includes(key as any) && productUserVisible[key] !== false && (
                                        <input
+                                          name={`product_label_${key}`}
                                           type="text"
                                           placeholder={key === 'custom_note' ? 'Placeholder (affiché dans la zone de saisie)' : (productUserUsePharmacieLabels && isProductFormStorePharmacie ? PHARMACIE_LABELS[key] : DEFAULT_LABELS[key])}
-                                          value={productUserLabels[key] ?? ''}
-                                          onChange={e => setProductUserLabels(prev => ({ ...prev, [key]: e.target.value }))}
+                                          defaultValue={productUserLabels[key] ?? ''}
+                                          onBlur={e => setProductUserLabels(prev => ({ ...prev, [key]: (e.target as HTMLInputElement).value }))}
                                           className="flex-1 min-w-[160px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
                                           title={key === 'custom_note' ? 'Ce texte sera utilisé comme placeholder dans l\'app (pas comme libellé)' : undefined}
                                        />
@@ -4772,7 +5218,7 @@ ${itemsText}
          {
             showAddPartner && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddPartner(false)}></div>
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddPartner(false)}></div>
                   <div className="relative bg-white w-full max-w-xl rounded-[3rem] shadow-2xl overflow-y-auto max-h-[90vh]">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingStore ? 'Modifier' : 'Nouveau'} Partenaire</h3>
@@ -4812,7 +5258,7 @@ ${itemsText}
                               <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Catégorie</label>
                               <select
                                  name="category_id"
-                                 defaultValue={editingStore?.category_id}
+                                 defaultValue={editingStore?.category_id || editingStore?.category || ''}
                                  required
                                  className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer"
                                  onChange={(e) => setEditingStore(prev => prev ? { ...prev, category_id: e.target.value } : null)}
@@ -4828,16 +5274,16 @@ ${itemsText}
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Sous-Catégorie</label>
                            <select
                               name="sub_category"
-                              defaultValue={editingStore?.sub_category}
+                              defaultValue={editingStore?.sub_category || ''}
                               className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer"
                            >
                               <option value="">Aucune</option>
                               {/* Legacy Support: sub_categories array in cat table */}
-                              {dbCategories.find(c => c.id === (editingStore?.category_id))?.sub_categories?.map((sc: string) => (
+                              {dbCategories.find(c => c.id === (editingStore?.category_id || editingStore?.category))?.sub_categories?.map((sc: string) => (
                                  <option key={sc} value={sc}>{sc} (Legacy)</option>
                               ))}
                               {/* Relational Support: sub_categories table */}
-                              {propSubCategories.filter(sc => sc.category_id === editingStore?.category_id).map(sc => (
+                              {propSubCategories.filter(sc => sc.category_id === (editingStore?.category_id || editingStore?.category)).map(sc => (
                                  <option key={sc.id} value={sc.name}>{sc.name}</option>
                               ))}
                            </select>
@@ -4890,10 +5336,11 @@ ${itemsText}
                               <div className="space-y-2">
                                  <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Texte sous « Commande personnalisée »</label>
                                  <input
+                                    name="custom_order_description"
                                     type="text"
                                     placeholder="ex: Écrivez ici tous les produits depuis le menu et indiquez le prix total dans la case."
-                                    value={storeUserLabels.custom_order_description ?? ''}
-                                    onChange={e => setStoreUserLabels(prev => ({ ...prev, custom_order_description: e.target.value }))}
+                                    defaultValue={storeUserLabels.custom_order_description ?? ''}
+                                    onBlur={e => setStoreUserLabels(prev => ({ ...prev, custom_order_description: (e.target as HTMLInputElement).value }))}
                                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold placeholder:text-slate-400"
                                  />
                               </div>
@@ -4906,10 +5353,11 @@ ${itemsText}
                                        </label>
                                        {!STORE_LABEL_ONLY_KEYS.includes(key as any) && storeUserVisible[key] !== false && (
                                           <input
+                                             name={`user_label_${key}`}
                                              type="text"
                                              placeholder="Placeholder (affiché dans la zone de saisie)"
-                                             value={storeUserLabels[key] ?? ''}
-                                             onChange={e => setStoreUserLabels(prev => ({ ...prev, [key]: e.target.value }))}
+                                             defaultValue={storeUserLabels[key] ?? ''}
+                                             onBlur={e => setStoreUserLabels(prev => ({ ...prev, [key]: (e.target as HTMLInputElement).value }))}
                                              className="flex-1 min-w-[160px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
                                              title="Ce texte sera utilisé comme placeholder dans l'app"
                                           />
@@ -4976,7 +5424,9 @@ ${itemsText}
                               </div>
                            )}
                         </div>
-                        <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl">Enregistrer la Marque</button>
+                        <button type="submit" disabled={isSavingStore} className={`w-full py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl ${isSavingStore ? 'bg-slate-700 cursor-wait opacity-80 text-slate-200' : 'bg-slate-900 text-white'}`}>
+                                    {isSavingStore ? 'Enregistrement...' : 'Enregistrer la Marque'}
+                                 </button>
                      </form>
                   </div>
                </div>
@@ -4989,7 +5439,7 @@ ${itemsText}
          {
             showAddCategory && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-                  <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddCategory(false)}></div>
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddCategory(false)}></div>
                   <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden">
                      <header className="p-8 border-b flex justify-between items-center">
                         <h3 className="text-xl font-black uppercase">{editingCategory ? 'Modifier' : 'Nouvelle'} Catégorie</h3>
@@ -5049,7 +5499,7 @@ ${itemsText}
          {/* MODAL UTILISATEUR */}
          {selectedUser && (
             <div key={`user_${selectedUser.id}`} className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-               <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedUser(null)}></div>
+               <div className="absolute inset-0 bg-slate-900/60" onClick={() => setSelectedUser(null)}></div>
                <div className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                   <header className="p-8 border-b flex justify-between items-center bg-slate-50">
                      <h3 className="text-xl font-black uppercase tracking-tighter">Profil Utilisateur</h3>
@@ -5154,7 +5604,7 @@ ${itemsText}
          {/* MODAL ANNONCE */}
          {showAddAnnouncement && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-               <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowAddAnnouncement(false)}></div>
+               <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddAnnouncement(false)}></div>
                <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                   <header className="p-8 border-b flex justify-between items-center bg-slate-50">
                      <h3 className="text-xl font-black uppercase">{editingAnnouncement ? 'Modifier' : 'Nouvelle'} Annonce</h3>
@@ -5243,7 +5693,7 @@ ${itemsText}
          {/* MODAL MANAGE SUB-CATEGORIES */}
          {showAddSubCategory && editingCategory && (
             <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-               <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }}></div>
+               <div className="absolute inset-0 bg-slate-900/60" onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }}></div>
                <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
                   <header className="p-8 border-b flex justify-between items-center bg-indigo-50">
                      <div>
@@ -5336,7 +5786,7 @@ const StatCard: React.FC<{ label: string; value: string | number; icon: React.Re
 
 const AdminProfileModal: React.FC<{ admin: any; onClose: () => void; onLogout: () => void }> = ({ admin, onClose, onLogout }) => (
    <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="absolute inset-0 bg-slate-900/60" onClick={onClose}></div>
       <div className="relative bg-white w-full max-w-md rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
          <header className="p-10 border-b flex justify-between items-center bg-orange-50">
             <div className="flex items-center gap-4">
@@ -5440,7 +5890,7 @@ const ImageLightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ im
          <div className="absolute top-6 right-6 flex gap-3 z-10">
             <button
                onClick={handleDownload}
-               className="bg-white/10 backdrop-blur-sm text-white p-4 rounded-2xl hover:bg-white/20 transition-all active:scale-95 shadow-xl"
+               className="bg-white/10 text-white p-4 rounded-2xl hover:bg-white/20 transition-colors active:scale-95 shadow-lg"
                title="Télécharger"
             >
                <Download size={24} />
@@ -5455,7 +5905,7 @@ const ImageLightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ im
             </button>
             <button
                onClick={handleReset}
-               className="bg-white/10 backdrop-blur-sm text-white px-6 py-4 rounded-2xl hover:bg-white/20 transition-all active:scale-95 shadow-xl font-bold text-sm"
+               className="bg-white/10 text-white px-6 py-4 rounded-2xl hover:bg-white/20 transition-colors active:scale-95 shadow-lg font-bold text-sm"
                title="Réinitialiser"
             >
                {Math.round(zoomLevel * 100)}%
@@ -5470,7 +5920,7 @@ const ImageLightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ im
             </button>
             <button
                onClick={onClose}
-               className="bg-red-500/80 backdrop-blur-sm text-white p-4 rounded-2xl hover:bg-red-600 transition-all active:scale-95 shadow-xl"
+               className="bg-red-500/80 text-white p-4 rounded-2xl hover:bg-red-600 transition-colors active:scale-95 shadow-lg"
                title="Fermer"
             >
                <X size={24} />
@@ -5479,7 +5929,7 @@ const ImageLightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ im
 
          {/* Indicateur de zoom */}
          {zoomLevel > 1 && (
-            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/10 backdrop-blur-sm text-white px-6 py-3 rounded-full text-sm font-bold">
+            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-white/10 text-white px-6 py-3 rounded-full text-sm font-bold">
                Glissez pour déplacer l'image
             </div>
          )}

@@ -22,6 +22,14 @@ CREATE TABLE public.categories (
   sub_categories ARRAY DEFAULT '{}'::text[],
   CONSTRAINT categories_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.delivery_fee_tiers (
+  id smallint NOT NULL DEFAULT nextval('delivery_fee_tiers_id_seq'::regclass),
+  max_km numeric NOT NULL UNIQUE,
+  fee_dh numeric NOT NULL,
+  extra_after_km numeric,
+  extra_per_km numeric,
+  CONSTRAINT delivery_fee_tiers_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.device_tokens (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   user_id uuid,
@@ -156,6 +164,8 @@ CREATE TABLE public.products (
   created_at timestamp with time zone DEFAULT now(),
   product_images ARRAY DEFAULT '{}'::text[],
   price_editable boolean DEFAULT true,
+  user_visible_fields jsonb DEFAULT '["name", "price", "image", "description", "custom_note", "budget"]'::jsonb,
+  user_field_labels jsonb DEFAULT '{}'::jsonb,
   CONSTRAINT products_pkey PRIMARY KEY (id),
   CONSTRAINT products_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
 );
@@ -213,6 +223,8 @@ CREATE TABLE public.stores (
   sub_category text,
   latitude numeric CHECK (latitude IS NULL OR latitude >= '-90'::integer::numeric AND latitude <= 90::numeric),
   longitude numeric CHECK (longitude IS NULL OR longitude >= '-180'::integer::numeric AND longitude <= 180::numeric),
+  user_visible_fields jsonb DEFAULT '["gallery", "custom_note", "budget", "image"]'::jsonb,
+  user_field_labels jsonb DEFAULT '{}'::jsonb,
   CONSTRAINT stores_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.sub_categories (

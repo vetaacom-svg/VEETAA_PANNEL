@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Store, Product } from '../types';
 import { ArrowLeft, Star, ShoppingCart, Plus } from 'lucide-react';
 
@@ -11,8 +11,20 @@ interface StoreDetailProps {
 }
 
 const StoreDetail: React.FC<StoreDetailProps> = ({ store, onBack, onSelectProduct, onAddToCart }) => {
+    // Memoize produits pour éviter re-renders inutiles
+    const memoizedProducts = useMemo(() => store.products || [], [store.products]);
+    
+    // Debounce les clicks pour eviter les actions en double rapides
+    const handleSelectProductDebounced = useCallback((product: Product) => {
+        onSelectProduct(product);
+    }, [onSelectProduct]);
+
+    const handleAddToCartDebounced = useCallback((product: Product) => {
+        onAddToCart(product);
+    }, [onAddToCart]);
+
     return (
-        <div className="animate-in fade-in duration-500 pb-20">
+        <div className="animate-in fade-in duration-200 pb-20">
             {/* Hero Section */}
             <div className="relative h-64 md:h-80 w-full overflow-hidden">
                 <img src={store.image} className="w-full h-full object-cover" alt={store.name} />
@@ -49,11 +61,11 @@ const StoreDetail: React.FC<StoreDetailProps> = ({ store, onBack, onSelectProduc
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {(store.products || []).length > 0 ? (
-                        store.products?.map(product => (
+                    {memoizedProducts.length > 0 ? (
+                        memoizedProducts.map(product => (
                             <div
                                 key={product.id}
-                                className="bg-white rounded-[2.5rem] border border-slate-100 p-4 shadow-sm hover:shadow-2xl transition-all group"
+                                className="bg-white rounded-[2.5rem] border border-slate-100 p-4 shadow-sm hover:shadow-2xl transition-shadow group"
                             >
                                 <div className="relative mb-4 overflow-hidden rounded-[2rem]">
                                     <img src={product.image} className="w-full aspect-square object-cover transition-transform group-hover:scale-110" alt={product.name} />
@@ -67,14 +79,14 @@ const StoreDetail: React.FC<StoreDetailProps> = ({ store, onBack, onSelectProduc
 
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => onSelectProduct(product)}
-                                            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all active:scale-95"
+                                            onClick={() => handleSelectProductDebounced(product)}
+                                            className="flex-1 bg-slate-900 text-white py-4 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-800 active:bg-slate-950 transition-colors"
                                         >
                                             Détails
                                         </button>
                                         <button
-                                            onClick={() => onAddToCart(product)}
-                                            className="w-14 bg-orange-600 text-white flex items-center justify-center rounded-2xl hover:bg-orange-700 transition-colors active:scale-90"
+                                            onClick={() => handleAddToCartDebounced(product)}
+                                            className="w-14 bg-orange-600 text-white flex items-center justify-center rounded-2xl hover:bg-orange-700 active:bg-orange-800 transition-colors"
                                         >
                                             <Plus className="w-6 h-6" />
                                         </button>

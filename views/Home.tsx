@@ -56,7 +56,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
   }, [displayBanners.length]);
 
   return (
-    <div ref={containerRef} className="p-4 space-y-6 animate-in fade-in duration-500 pb-20">
+    <div ref={containerRef} className="p-4 space-y-6 animate-in fade-in duration-200 pb-20">
 
       {!isExplorerMode && (
         <div className="relative">
@@ -74,7 +74,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
           {displayBanners.map((banner, idx) => (
             <div
               key={idx}
-              className={`absolute inset-0 p-6 flex flex-col justify-center transition-opacity duration-1000 bg-gradient-to-r ${banner.color} ${idx === activeBanner ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
+              className={`absolute inset-0 p-6 flex flex-col justify-center transition-opacity duration-500 bg-gradient-to-r ${banner.color} ${idx === activeBanner ? 'opacity-100 z-10' : 'opacity-0 z-0'}`}
             >
               <h3 className="text-xl font-black text-white mb-1 leading-tight">{banner.title}</h3>
               <p className="text-white/80 font-medium text-xs">{banner.subtitle}</p>
@@ -83,7 +83,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
           ))}
           <div className={`absolute bottom-4 ${language === 'ar' ? 'right-6' : 'left-6'} flex gap-1.5 z-20`}>
             {displayBanners.map((_, idx) => (
-              <div key={idx} className={`h-1 rounded-full transition-all ${idx === activeBanner ? 'bg-white w-6' : 'bg-white/40 w-1.5'}`} />
+              <div key={idx} className={`h-1 rounded-full transition-[width] ${idx === activeBanner ? 'bg-white w-6' : 'bg-white/40 w-1.5'}`} />
             ))}
           </div>
         </div>
@@ -116,7 +116,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
       </div>
 
       {isExplorerMode ? (
-        <div className="space-y-4 animate-in slide-in-from-bottom-6 duration-700 pb-10">
+        <div className="space-y-4 animate-in slide-in-from-bottom-6 duration-200 pb-10">
           <div className="flex items-center justify-between px-1">
             <h3 className="text-lg font-black text-slate-800">{language === 'ar' ? 'جميع المنتجات' : 'Tous les produits'}</h3>
             <button onClick={() => onToggleExplorer(false)} className="text-[10px] font-black uppercase text-orange-600">Réduire</button>
@@ -126,7 +126,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
               <div
                 key={`${p.id}-${idx}`}
                 onClick={() => onSelectProduct(p)}
-                className="bg-white rounded-[2rem] border border-slate-50 p-4 shadow-sm flex flex-col gap-4 group active:scale-95 hover:shadow-xl transition-all cursor-pointer"
+                className="bg-white rounded-[2rem] border border-slate-50 p-4 shadow-sm flex flex-col gap-4 group hover:shadow-xl transition-shadow cursor-pointer"
               >
                 <div className="relative overflow-hidden rounded-2xl">
                   <img src={p.image} className="w-full aspect-square object-cover transition-transform group-hover:scale-110" alt={p.name} />
@@ -144,7 +144,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
           </div>
         </div>
       ) : (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div className="space-y-6 animate-in fade-in duration-200">
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
               <h3 className="text-lg font-black text-slate-800 tracking-tight">{t('popular')}</h3>
@@ -153,7 +153,7 @@ const Home: React.FC<HomeProps> = ({ onSelectCategory, favorites, onToggleFavori
 
             <div className="flex gap-4 overflow-x-auto no-scrollbar pb-1 -mx-4 px-4 md:grid md:grid-cols-2 lg:grid-cols-3 md:overflow-visible">
               {activeStores.slice(0, 6).map((store) => (
-                <div key={store.id} onClick={() => onSelectCategory(store.category)} className="min-w-[240px] md:min-w-0 bg-white rounded-[2rem] border border-slate-50 overflow-hidden shadow-md relative group active:scale-[0.98] hover:shadow-2xl transition-all cursor-pointer">
+                <div key={store.id} onClick={() => onSelectCategory(store.category)} className="min-w-[240px] md:min-w-0 bg-white rounded-[2rem] border border-slate-50 overflow-hidden shadow-md relative group hover:shadow-lg transition-shadow cursor-pointer">
                   <button
                     onClick={(e) => { e.stopPropagation(); onToggleFavorite(store.id); }}
                     className={`absolute top-3 ${language === 'ar' ? 'left-3' : 'right-3'} z-20 p-2 bg-white/90 backdrop-blur-md rounded-full shadow-sm transition-transform hover:scale-110 active:scale-90`}

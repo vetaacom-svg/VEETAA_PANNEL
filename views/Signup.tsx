@@ -34,7 +34,7 @@ const Signup: React.FC<SignupProps> = ({ onSignup, onGoToLogin, onSkip }) => {
   };
 
   return (
-    <div className="min-h-screen p-8 flex flex-col justify-center animate-in slide-in-from-right duration-500">
+    <div className="min-h-screen p-8 flex flex-col justify-center animate-in slide-in-from-right duration-200">
       <div className="mb-12">
         <h2 className="text-3xl font-black text-slate-800 mb-2">Bienvenue ! ✨</h2>
         <p className="text-slate-500">Créez votre compte pour commencer.</p>

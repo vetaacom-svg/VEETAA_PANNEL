@@ -48,7 +48,7 @@ const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess }) => {
                 <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-600/10 blur-[120px] rounded-full"></div>
             </div>
 
-            <div className="w-full max-w-md relative animate-in fade-in zoom-in duration-700">
+            <div className="w-full max-w-md relative animate-in fade-in zoom-in duration-200">
                 {/* Logo & Header */}
                 <div className="text-center mb-10 space-y-4">
                     <div className="inline-flex p-4 bg-orange-500/10 rounded-[2rem] border border-orange-500/20 shadow-xl shadow-orange-500/5 mb-2">

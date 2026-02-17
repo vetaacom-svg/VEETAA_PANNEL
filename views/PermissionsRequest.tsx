@@ -30,7 +30,7 @@ const PermissionsRequest: React.FC<PermissionsProps> = ({ onGranted }) => {
   const allGranted = granted.location && granted.calls && granted.contacts;
 
   return (
-    <div className="min-h-screen p-8 flex flex-col justify-center space-y-8 animate-in slide-in-from-bottom duration-500 relative">
+    <div className="min-h-screen p-8 flex flex-col justify-center space-y-8 animate-in slide-in-from-bottom duration-200 relative">
       <button 
         onClick={onGranted}
         className="absolute top-8 right-8 text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors flex items-center gap-1"

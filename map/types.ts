@@ -6,6 +6,8 @@ export interface Store {
   lng?: number | null;
   type: 'restaurant' | 'grocery' | 'pharmacy';
   address: string;
+  // public.stores.image_url — si présent, utiliser comme icône sur la carte
+  image_url?: string;
 }
 
 export interface Driver {

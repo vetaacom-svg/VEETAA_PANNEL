@@ -199,7 +199,7 @@ const Checkout: React.FC<CheckoutProps> = ({
         <button
           onClick={handleConfirm}
           disabled={!location || (method === 'transfer' && !receiptImage) || isUploading}
-          className="w-full bg-white text-slate-900 py-4 rounded-2xl font-black text-lg active:scale-95 disabled:opacity-30 flex items-center justify-center gap-2"
+          className="w-full bg-white text-slate-900 py-4 rounded-2xl font-black text-lg disabled:opacity-30 flex items-center justify-center gap-2 hover:bg-slate-100 transition-colors"
         >
           {isUploading ? <div className="w-5 h-5 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" /> : 'Confirmer'}
         </button>

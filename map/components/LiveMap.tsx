@@ -1,5 +1,6 @@
 
 import React, { useEffect } from 'react';
+import L from 'leaflet';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import { Store, Driver, User, Order } from '../types';
 import { StoreIcon, DriverIdleIcon, DriverBusyIcon, UserIdleIcon, UserActiveIcon } from './MarkerIcons';
@@ -63,13 +64,53 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
           url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         />
 
-        {/* MAGASINS */}
+        {console.debug('LiveMap stores (id → img):', stores.map(s => ({ id: s.id, img: (s as any).image_url || (s as any).image })))}{/* MAGASINS */}
         {stores.map(store => {
           if (!store.lat || !store.lng) return null;
+
+          const img = (store as any).image_url || (store as any).image;
+          const makeInitialsSvg = (name = '') => {
+            const initials = (name.split(' ').map(s => s[0]).filter(Boolean).slice(0,2).join('') || 'S').toUpperCase();
+            const colors = ['#f97316','#06b6d4','#ef4444','#10b981','#8b5cf6','#f43f5e','#f59e0b'];
+            const hash = Array.from(initials).reduce((acc, c) => acc + c.charCodeAt(0), 0);
+            const bg = colors[hash % colors.length];
+            const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>` +
+              `<rect rx='20' width='100%' height='100%' fill='${bg}'/>` +
+              `<text x='50%' y='54%' font-family='Inter, Arial, sans-serif' font-size='52' font-weight='700' fill='#fff' text-anchor='middle' dominant-baseline='middle'>${initials}</text>` +
+              `</svg>`;
+            return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+          };
+
+          const fallback = makeInitialsSvg(store.name || 'Store');
+          const src = img || fallback;
+          const storeIcon = L.divIcon({
+            className: 'veetaa-store-icon',
+            html: `
+              <div style="width:42px;height:42px;border-radius:12px;overflow:hidden;border:2px solid rgba(255,255,255,0.9);box-shadow:0 6px 14px rgba(2,6,23,0.12)">
+                <img src="${src}" onerror="this.onerror=null;this.src='${fallback}'" style="width:100%;height:100%;object-fit:cover;display:block;" />
+              </div>
+            `,
+            iconSize: [42, 42],
+            iconAnchor: [21, 42],
+            popupAnchor: [0, -38]
+          });
+
           return (
-            <Marker key={store.id} position={[store.lat, store.lng]} icon={StoreIcon}>
+            <Marker key={store.id} position={[store.lat, store.lng]} icon={storeIcon}>
               <Popup>
-                <div className="p-2 min-w-[180px]">
+                <div className="p-2 min-w-[220px]">
+                  {/* Store image preview — use resolved src (img || fallback) */}
+                  {src ? (
+                    <div className="w-full h-24 overflow-hidden rounded-md mb-2">
+                      <img
+                        src={src}
+                        alt={store.name}
+                        className="w-full h-full object-cover"
+                        onError={(e: any) => { try { e.currentTarget.src = fallback; } catch {} }}
+                      />
+                    </div>
+                  ) : null}
+
                   <h3 className="font-bold text-red-600 text-base">{store.name}</h3>
                   <p className="text-[10px] text-gray-400 font-mono">ID: {store.id}</p>
                   <div className="mt-2 text-xs border-t pt-2 space-y-1">

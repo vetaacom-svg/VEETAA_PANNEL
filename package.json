@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "update-store-images": "node scripts/update_store_images.js",
     "cap:sync": "npx cap sync",
     "cap:open:android": "npx cap open android",
     "cap:add:android": "npx cap add android"

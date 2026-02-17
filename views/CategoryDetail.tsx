@@ -1,6 +1,6 @@
 
 // Testing search/replace
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { CategoryID, Store, Language } from '../types';
 import { MOCK_STORES, CATEGORIES } from '../constants';
 import { Info, Heart, Star } from 'lucide-react';
@@ -20,7 +20,22 @@ const CategoryDetail: React.FC<CategoryDetailProps> = ({ category, favorites, on
 
   const isDirectOrder = [CategoryID.EXPRESS, CategoryID.BOULANGERIE, CategoryID.PRESSING, CategoryID.MARKET].includes(category);
 
-  if (isDirectOrder && stores.length === 0) {
+  // Memoize stores pour cette catégorie
+  const categoryStores = useMemo(() => {
+    return stores.filter(s => !s.isDeleted && s.category === category);
+  }, [stores, category]);
+
+  // Debounce les clics
+  const handleStoreSelect = useCallback((store: Store) => {
+    onSelectStore(store);
+  }, [onSelectStore]);
+
+  const handleToggleFav = useCallback((e: React.MouseEvent<HTMLButtonElement>, storeId: string) => {
+    e.stopPropagation();
+    onToggleFavorite(storeId);
+  }, [onToggleFavorite]);
+
+  if (isDirectOrder && categoryStores.length === 0) {
     const systemStore: Store = {
       id: `sys-${category}`,
       name: `Service ${categoryInfo?.name}`,
@@ -29,7 +44,7 @@ const CategoryDetail: React.FC<CategoryDetailProps> = ({ category, favorites, on
       image: 'https://images.unsplash.com/photo-1596701062351-8c2c14d1fdd0?auto=format&fit=crop&q=80&w=400',
     };
     return (
-      <div className="p-10 flex flex-col items-center justify-center min-h-[70vh] text-center space-y-8 animate-in slide-in-from-bottom duration-500">
+      <div className="p-10 flex flex-col items-center justify-center min-h-[70vh] text-center space-y-8 animate-in slide-in-from-bottom duration-200">
         <div className={`w-32 h-32 rounded-[2.5rem] ${categoryInfo?.color} flex items-center justify-center text-white shadow-2xl animate-pulse`}>
           {categoryInfo?.icon}
         </div>
@@ -39,7 +54,7 @@ const CategoryDetail: React.FC<CategoryDetailProps> = ({ category, favorites, on
         </div>
         <button
           onClick={() => onSelectStore(systemStore)}
-          className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-slate-200 active:scale-95 transition-all"
+          className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black text-lg shadow-xl shadow-slate-200 hover:bg-slate-800 active:bg-slate-950 transition-colors"
         >
           Commander maintenant
         </button>
@@ -55,19 +70,19 @@ const CategoryDetail: React.FC<CategoryDetailProps> = ({ category, favorites, on
         </div>
         <div>
           <h2 className="text-4xl font-black text-slate-900 tracking-tighter">{language === 'ar' ? categoryInfo?.name_ar : categoryInfo?.name_fr}</h2>
-          <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">{stores.length} Établissements disponibles</p>
+          <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em]">{categoryStores.length} Établissements disponibles</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {stores.map(store => (
+        {categoryStores.map(store => (
           <div
             key={store.id}
-            onClick={() => onSelectStore(store)}
-            className="flex flex-col bg-white rounded-[2.5rem] border border-slate-50 shadow-md relative overflow-hidden group active:scale-[0.98] transition-all"
+            onClick={() => handleStoreSelect(store)}
+            className="flex flex-col bg-white rounded-[2.5rem] border border-slate-50 shadow-md relative overflow-hidden group hover:shadow-lg transition-shadow"
           >
             <button
-              onClick={(e) => { e.stopPropagation(); onToggleFavorite(store.id); }}
+              onClick={(e) => handleToggleFav(e, store.id)}
               className="absolute top-4 right-4 p-3 bg-white/90 backdrop-blur-md rounded-full z-10 shadow-sm"
             >
               <Heart className={`w-5 h-5 ${favorites.includes(store.id) ? 'text-red-500 fill-red-500' : 'text-slate-300'}`} />
