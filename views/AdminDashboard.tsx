@@ -971,6 +971,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [selectedTicketIds, setSelectedTicketIds] = useState<string[]>([]);
    const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+
    const scrollToBottom = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
    };
@@ -1165,9 +1166,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [storeImagePreview, setStoreImagePreview] = useState<string | null>(null);
    const [productImagesPreviews, setProductImagesPreviews] = useState<string[]>([]);
    const [hasProductsEnabled, setHasProductsEnabled] = useState(false);
+   const STORE_UI_FIELD_KEYS = ['gallery', 'custom_note', 'budget', 'image'] as const;
+   const STORE_LABEL_ONLY_KEYS = ['gallery', 'budget', 'image'] as const;
+   const [storeUserVisible, setStoreUserVisible] = useState<Record<string, boolean>>(() => Object.fromEntries(['gallery', 'custom_note', 'budget', 'image'].map(k => [k, true])));
+   const [storeUserLabels, setStoreUserLabels] = useState<Record<string, string>>({});
    // Unified image management - first image is always the main image
    const [productImagePreview, setProductImagePreview] = useState<string | null>(null);
    const [extractedCoordinates, setExtractedCoordinates] = useState<{ lat: number; lng: number } | null>(null);
+
+   const USER_UI_FIELD_KEYS = ['name', 'price', 'image', 'description', 'custom_note'] as const;
+   const LABEL_ONLY_KEYS = ['name', 'price', 'image', 'description'] as const; // show/hide only, no editable label
+   const DEFAULT_LABELS: Record<string, string> = { custom_note: 'ex: commande 1' };
+   const PHARMACIE_LABELS: Record<string, string> = { custom_note: "Détails ordonnance / Médicaments" };
+   const [productUserVisible, setProductUserVisible] = useState<Record<string, boolean>>(() => Object.fromEntries(USER_UI_FIELD_KEYS.map(k => [k, true])));
+   const [productUserLabels, setProductUserLabels] = useState<Record<string, string>>({});
+   const [productUserUsePharmacieLabels, setProductUserUsePharmacieLabels] = useState(false);
+   const [productFormStoreId, setProductFormStoreId] = useState<string>('');
+   const productFormStore = stores.find(s => s.id === productFormStoreId);
+   const isProductFormStorePharmacie = productFormStore?.category_id === 'pharmacie' || productFormStore?.category === 'pharmacie';
+
+   useEffect(() => {
+      if (!showAddProduct) return;
+      if (editingProduct) {
+         setProductFormStoreId((editingProduct as any).store_id || '');
+         const vis = (editingProduct as any).user_visible_fields;
+         const lab = (editingProduct as any).user_field_labels || {};
+         if (Array.isArray(vis)) setProductUserVisible(prev => ({ ...Object.fromEntries(USER_UI_FIELD_KEYS.map(k => [k, true])), ...Object.fromEntries(USER_UI_FIELD_KEYS.map(k => [k, vis.includes(k)])) }));
+         if (lab && typeof lab === 'object') setProductUserLabels({ ...lab });
+         setProductUserUsePharmacieLabels(false);
+      } else {
+         setProductFormStoreId(stores.filter(s => !s.is_deleted)[0]?.id || '');
+         setProductUserVisible(Object.fromEntries(USER_UI_FIELD_KEYS.map(k => [k, true])));
+         setProductUserLabels({});
+         setProductUserUsePharmacieLabels(false);
+      }
+   }, [showAddProduct, editingProduct?.id]);
+
+   useEffect(() => {
+      if (productUserUsePharmacieLabels && isProductFormStorePharmacie) {
+         setProductUserLabels({ ...PHARMACIE_LABELS });
+      }
+   }, [productUserUsePharmacieLabels, isProductFormStorePharmacie]);
    const [showAddAnnouncement, setShowAddAnnouncement] = useState(false);
    const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
    const [announcementImagePreview, setAnnouncementImagePreview] = useState<string | null>(null);
@@ -1198,6 +1237,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          setHasProductsEnabled(false);
       }
    }, [editingStore]);
+
+   // Init store user-visible fields when partner modal opens (for stores without products)
+   useEffect(() => {
+      if (!showAddPartner) return;
+      if (editingStore) {
+         const vis = (editingStore as any).user_visible_fields;
+         const lab = (editingStore as any).user_field_labels || {};
+         if (Array.isArray(vis)) setStoreUserVisible(prev => ({ ...Object.fromEntries(STORE_UI_FIELD_KEYS.map(k => [k, true])), ...Object.fromEntries(STORE_UI_FIELD_KEYS.map(k => [k, vis.includes(k)])) }));
+         if (lab && typeof lab === 'object') setStoreUserLabels({ ...lab });
+      } else {
+         setStoreUserVisible(Object.fromEntries(STORE_UI_FIELD_KEYS.map(k => [k, true])));
+         setStoreUserLabels({});
+      }
+   }, [showAddPartner, editingStore?.id]);
 
    // --- LOGO (pour les PDF) ---
    const logo = "LOGO.png"; // Sera géré par le chemin relatif ou base64
@@ -1419,6 +1472,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
 
 
+         const visibleFields = USER_UI_FIELD_KEYS.filter(k => productUserVisible[k] !== false);
+         const fieldLabels: Record<string, string> = {};
+         USER_UI_FIELD_KEYS.forEach(k => {
+            const v = productUserLabels[k]?.trim();
+            if (v) fieldLabels[k] = v;
+         });
          const prodData = {
             name: formData.get('name') as string,
             price: parseFloat(formData.get('price') as string),
@@ -1426,7 +1485,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             image_url: productImageURL,
             description: formData.get('description') as string,
             price_editable: formData.get('price_editable') === 'on',
-            product_images: additionalImageURLs
+            product_images: additionalImageURLs,
+            user_visible_fields: visibleFields,
+            user_field_labels: Object.keys(fieldLabels).length ? fieldLabels : {}
          };
 
          if (editingProduct) {
@@ -1966,6 +2027,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }
          }
 
+         const storeVisibleFields = STORE_UI_FIELD_KEYS.filter(k => storeUserVisible[k] !== false);
+         const storeFieldLabels: Record<string, string> = {};
+         STORE_UI_FIELD_KEYS.forEach(k => {
+            const v = storeUserLabels[k]?.trim();
+            if (v) storeFieldLabels[k] = v;
+         });
+         if (storeUserLabels.custom_order_description?.trim()) storeFieldLabels.custom_order_description = storeUserLabels.custom_order_description.trim();
          const storeData: any = {
             name: formData.get('name') as string,
             category_id: formData.get('category_id') as string,
@@ -1981,7 +2049,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             has_products: formData.get('has_products') === 'on',
             description: formData.get('description') as string,
             latitude: extractedCoordinates?.lat || null,
-            longitude: extractedCoordinates?.lng || null
+            longitude: extractedCoordinates?.lng || null,
+            user_visible_fields: storeVisibleFields,
+            user_field_labels: Object.keys(storeFieldLabels).length ? storeFieldLabels : {}
          };
 
          if (editingStore) {
@@ -3537,6 +3607,7 @@ ${itemsText}
                         </div>
                      </div>
 
+
                      {/* ANNOUNCEMENT MANAGEMENT */}
                      <div className="bg-white rounded-[3rem] border p-10 shadow-sm space-y-8">
                         <div className="flex items-center justify-between">
@@ -4530,7 +4601,7 @@ ${itemsText}
                            setProductAdditionalImages([]);
                         }} className="p-2 bg-slate-100 rounded-full"><X size={20} /></button>
                      </header>
-                     <form key={editingProduct?.id || 'new-product'} onSubmit={handleCreateProduct} className="p-8 space-y-6">
+                     <form key={editingProduct?.id || 'new-product'} id="product-form" onSubmit={handleCreateProduct} className="p-8 space-y-6">
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Nom du Produit</label>
                            <input name="name" defaultValue={editingProduct?.name} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" required />
@@ -4542,7 +4613,7 @@ ${itemsText}
                            </div>
                            <div className="space-y-1">
                               <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Boutique / Marque</label>
-                              <select name="store_id" defaultValue={(editingProduct as any)?.store_id} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer" required>
+                              <select name="store_id" value={productFormStoreId || (editingProduct as any)?.store_id || stores.filter(s => !s.is_deleted)[0]?.id || ''} onChange={e => setProductFormStoreId(e.target.value)} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer" required>
                                  {stores.filter(s => !s.is_deleted).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                               </select>
                            </div>
@@ -4657,6 +4728,39 @@ ${itemsText}
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Description</label>
                            <textarea name="description" defaultValue={editingProduct?.description} rows={3} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all resize-none" />
                         </div>
+
+                        {/* Champs visibles pour l'utilisateur (app) + libellés personnalisés */}
+                        <div className="bg-amber-50/80 border border-amber-100 rounded-[2rem] p-6 space-y-4">
+                           <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Champs visibles dans l’app utilisateur</h4>
+                           <p className="text-[9px] text-slate-500 font-medium">Cochez les champs à afficher et personnalisez les libellés. Si la boutique est une pharmacie, vous pouvez utiliser les libellés pharmacie.</p>
+                           {isProductFormStorePharmacie && (
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                 <input type="checkbox" checked={productUserUsePharmacieLabels} onChange={e => setProductUserUsePharmacieLabels(e.target.checked)} className="rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                                 <span className="text-xs font-bold text-slate-700">Utiliser les libellés pharmacie</span>
+                              </label>
+                           )}
+                           <div className="grid grid-cols-1 gap-3">
+                              {USER_UI_FIELD_KEYS.map(key => (
+                                 <div key={key} className="flex flex-wrap items-center gap-3 bg-white rounded-xl p-3 border border-slate-100">
+                                    <label className="flex items-center gap-2 cursor-pointer min-w-[140px]">
+                                       <input type="checkbox" checked={productUserVisible[key] !== false} onChange={e => setProductUserVisible(prev => ({ ...prev, [key]: e.target.checked }))} className="rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                                       <span className="text-[10px] font-black text-slate-700 uppercase">{key === 'custom_note' ? 'Zone note / commande' : key === 'name' ? 'Nom' : key === 'price' ? 'Prix' : key === 'image' ? 'Image' : key === 'description' ? 'Description' : key}</span>
+                                    </label>
+                                    {!LABEL_ONLY_KEYS.includes(key as any) && productUserVisible[key] !== false && (
+                                       <input
+                                          type="text"
+                                          placeholder={key === 'custom_note' ? 'Placeholder (affiché dans la zone de saisie)' : (productUserUsePharmacieLabels && isProductFormStorePharmacie ? PHARMACIE_LABELS[key] : DEFAULT_LABELS[key])}
+                                          value={productUserLabels[key] ?? ''}
+                                          onChange={e => setProductUserLabels(prev => ({ ...prev, [key]: e.target.value }))}
+                                          className="flex-1 min-w-[160px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
+                                          title={key === 'custom_note' ? 'Ce texte sera utilisé comme placeholder dans l\'app (pas comme libellé)' : undefined}
+                                       />
+                                    )}
+                                 </div>
+                              ))}
+                           </div>
+                        </div>
+
                         <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl">{editingProduct ? 'Enregistrer' : 'Ajouter au Catalogue'}</button>
                      </form>
                   </div>
@@ -4778,6 +4882,43 @@ ${itemsText}
                               </div>
                            </div>
                         </div>
+
+                        {!hasProductsEnabled && (
+                           <div className="bg-amber-50/80 border border-amber-100 rounded-[2rem] p-6 space-y-4">
+                              <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Champs visibles dans l’app utilisateur (commande personnalisée)</h4>
+                              <p className="text-[9px] text-slate-500 font-medium">Pour les marques sans catalogue : cochez les champs à afficher et le placeholder de la zone de saisie.</p>
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-black text-slate-700 uppercase tracking-widest">Texte sous « Commande personnalisée »</label>
+                                 <input
+                                    type="text"
+                                    placeholder="ex: Écrivez ici tous les produits depuis le menu et indiquez le prix total dans la case."
+                                    value={storeUserLabels.custom_order_description ?? ''}
+                                    onChange={e => setStoreUserLabels(prev => ({ ...prev, custom_order_description: e.target.value }))}
+                                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold placeholder:text-slate-400"
+                                 />
+                              </div>
+                              <div className="grid grid-cols-1 gap-3">
+                                 {STORE_UI_FIELD_KEYS.map(key => (
+                                    <div key={key} className="flex flex-wrap items-center gap-3 bg-white rounded-xl p-3 border border-slate-100">
+                                       <label className="flex items-center gap-2 cursor-pointer min-w-[140px]">
+                                          <input type="checkbox" checked={storeUserVisible[key] !== false} onChange={e => setStoreUserVisible(prev => ({ ...prev, [key]: e.target.checked }))} className="rounded border-slate-300 text-orange-500 focus:ring-orange-500" />
+                                          <span className="text-[10px] font-black text-slate-700 uppercase">{key === 'custom_note' ? 'Zone note / commande' : key === 'gallery' ? 'Galerie' : key === 'budget' ? 'Budget' : key === 'image' ? 'Photo' : key}</span>
+                                       </label>
+                                       {!STORE_LABEL_ONLY_KEYS.includes(key as any) && storeUserVisible[key] !== false && (
+                                          <input
+                                             type="text"
+                                             placeholder="Placeholder (affiché dans la zone de saisie)"
+                                             value={storeUserLabels[key] ?? ''}
+                                             onChange={e => setStoreUserLabels(prev => ({ ...prev, [key]: e.target.value }))}
+                                             className="flex-1 min-w-[160px] bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
+                                             title="Ce texte sera utilisé comme placeholder dans l'app"
+                                          />
+                                       )}
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
 
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Description de la Marque</label>

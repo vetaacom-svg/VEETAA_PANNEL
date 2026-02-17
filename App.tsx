@@ -234,6 +234,8 @@ export default function App() {
         maps_url: s.maps_url,
         latitude: s.latitude ? Number(s.latitude) : null,
         longitude: s.longitude ? Number(s.longitude) : null,
+        user_visible_fields: s.user_visible_fields,
+        user_field_labels: s.user_field_labels || {},
         products: productsRes.data
           .filter((p: any) => p.store_id === s.id)
           .map((p: any) => ({
@@ -242,7 +244,12 @@ export default function App() {
             price: p.price,
             image: p.image_url,
             description: p.description,
-            storeName: s.name
+            storeName: s.name,
+            store_id: p.store_id,
+            price_editable: p.price_editable,
+            product_images: p.product_images || p.images || [],
+            user_visible_fields: p.user_visible_fields,
+            user_field_labels: p.user_field_labels || {}
           })),
       }));
       setStores(mappedStores);
@@ -266,6 +273,7 @@ export default function App() {
         hideStatistics,
         hideAnnouncements
       });
+
     }
 
     const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
@@ -442,14 +450,14 @@ export default function App() {
     showNotification("Livreur Assigné", `Livreur ID ${driverId} s'occupe de la commande.`);
   }, []);
 
-  const handleUpdateSettings = useCallback(async (key: string, value: string) => {
+  const handleUpdateSettings = useCallback(async (key: string, value: string, options?: { silent?: boolean }) => {
     const { error } = await supabase.from('settings').upsert({ key, value, updated_at: new Date().toISOString() });
     if (error) {
       showNotification("Erreur", "Impossible d'enregistrer les réglages.");
       console.error(error);
     } else {
       if (key === 'support_number') setSupportNumber(value);
-      showNotification("Réglages Enregistrés", "Les paramètres système ont été mis à jour.");
+      if (!options?.silent) showNotification("Réglages Enregistrés", "Les paramètres système ont été mis à jour.");
     }
   }, []);
 
