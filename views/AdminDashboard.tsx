@@ -968,6 +968,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
    const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
    const [deliveryZone, setDeliveryZone] = useState<'kenitra' | 'all_morocco'>(propDeliveryZone || 'kenitra');
+   // Local state for orders to enable optimistic updates
+   const [localOrders, setLocalOrders] = useState<Order[]>(propOrders);
    // delivery fee per km (configurable)
    const [feePerKm, setFeePerKm] = useState<number>(typeof (deliveryFeePerKm) !== 'undefined' ? deliveryFeePerKm : 3);
    const [savingFeePerKm, setSavingFeePerKm] = useState(false);
@@ -992,6 +994,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    useEffect(() => {
       if (typeof propDeliveryFeePerKm !== 'undefined') setFeePerKm(propDeliveryFeePerKm);
    }, [propDeliveryFeePerKm]);
+
+   // Sync local orders with prop orders when props change
+   useEffect(() => {
+      setLocalOrders(propOrders);
+   }, [propOrders]);
 
    // États pour lier un store à la carte
    const [pickingStore, setPickingStore] = useState<Store | null>(null);
@@ -2011,7 +2018,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    }, [setStores]);
 
    const handleUpdateOrderStatus = async (id: string, newStatus: OrderStatus) => {
-      const currentOrder = propOrders.find(o => o.id === id);
+      const currentOrder = localOrders.find(o => o.id === id);
       const currentHistory = (currentOrder?.statusHistory || []).map(h => ({
          status: h.status,
          timestamp: typeof h.timestamp === 'string' ? new Date(h.timestamp).getTime() : h.timestamp
@@ -2021,7 +2028,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const isArchivedStatus = newStatus === 'delivered' || newStatus === 'refused' || newStatus === 'unavailable';
 
       // OPTIMISTIC UPDATE - mise à jour immédiate du state local
-      setPropOrders(prev => prev.map(o => o.id === id ? { 
+      setLocalOrders(prev => prev.map(o => o.id === id ? { 
          ...o, 
          status: newStatus, 
          statusHistory: updatedHistory,
@@ -2044,7 +2051,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       if (error) {
          // ROLLBACK - restaurer l'état précédent
-         setPropOrders(prev => prev.map(o => o.id === id ? currentOrder || o : o));
+         setLocalOrders(prev => prev.map(o => o.id === id ? currentOrder || o : o));
          if (selectedOrder && selectedOrder.id === id) {
             setSelectedOrder(selectedOrder);
          }
@@ -2072,7 +2079,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
    const handleAssignDriver = async (orderId: string, driverId: string) => {
       // OPTIMISTIC UPDATE
-      setPropOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: driverId } : o));
+      setLocalOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: driverId } : o));
       if (selectedOrder && selectedOrder.id === orderId) {
          setSelectedOrder(prev => prev ? { ...prev, assignedDriverId: driverId } : null);
       }
@@ -2082,7 +2089,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (error) {
          alert("Erreur: " + error.message);
          // Rollback
-         setPropOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: undefined } : o));
+         setLocalOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: undefined } : o));
          if (selectedOrder && selectedOrder.id === orderId) {
             setSelectedOrder(prev => prev ? { ...prev, assignedDriverId: undefined } : null);
          }
@@ -2405,7 +2412,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const displayOrders = useMemo(() => {
       const terminalStatuses = ['delivered', 'refused', 'unavailable'];
       
-      const filtered = propOrders.filter(o => {
+      const filtered = localOrders.filter(o => {
          // HISTORY: show archived orders OR orders with terminal status (delivered, refused, unavailable)
          if (activeTab === 'HISTORY') {
             const isTerminal = terminalStatuses.includes(o.status);
@@ -2433,7 +2440,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
       
       return filtered;
-   }, [propOrders, activeTab, debouncedSearchTerm, statusFilter, storeFilter, dateFilter]);
+   }, [localOrders, activeTab, debouncedSearchTerm, statusFilter, storeFilter, dateFilter]);
 
    const startIndex = (currentPage - 1) * itemsPerPage;
    const paginatedOrders = useMemo(() => displayOrders.slice(startIndex, startIndex + itemsPerPage), [displayOrders, startIndex, itemsPerPage]);
@@ -2442,12 +2449,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       // Diagnostic: when admin opens ORDERS tab, log counts and active filters to help debugging
       useEffect(() => {
          if (activeTab !== 'ORDERS') return;
-         console.log('DEBUG ORDERS VIEW — propOrders count:', propOrders.length, 'displayOrders count:', displayOrders.length, 'paginated:', paginatedOrders.length);
+         console.log('DEBUG ORDERS VIEW — localOrders count:', localOrders.length, 'displayOrders count:', displayOrders.length, 'paginated:', paginatedOrders.length);
          console.log('DEBUG ORDERS FILTERS', { statusFilter, storeFilter, dateFilter, search: debouncedSearchTerm });
-         if (propOrders.length > 0 && displayOrders.length === 0) {
+         if (localOrders.length > 0 && displayOrders.length === 0) {
             console.warn('There are orders in the dataset but none match the current filters — try clearing search/date/status/store filters.');
          }
-      }, [activeTab, propOrders.length, displayOrders.length, paginatedOrders.length, statusFilter, storeFilter, dateFilter, debouncedSearchTerm]);
+      }, [activeTab, localOrders.length, displayOrders.length, paginatedOrders.length, statusFilter, storeFilter, dateFilter, debouncedSearchTerm]);
 
    // --- GLOBAL SEARCH FILTERS ---
    const lowerSearch = debouncedSearchTerm.toLowerCase();
@@ -3003,7 +3010,7 @@ ${itemsText}
                {!pageVisibility.hideStatistics && (
                   <NavItem active={activeTab === 'STATISTICS'} onClick={() => setActiveTab('STATISTICS')} icon={<BarChart3 size={20} />} label="Statistiques" />
                )}
-               <NavItem active={activeTab === 'HISTORY'} onClick={() => setActiveTab('HISTORY')} icon={<Clock size={20} />} label="Historique" badge={propOrders.filter(o => o.isArchived).length} />
+               <NavItem active={activeTab === 'HISTORY'} onClick={() => setActiveTab('HISTORY')} icon={<Clock size={20} />} label="Historique" badge={localOrders.filter(o => o.isArchived).length} />
                
                <NavItem active={activeTab === 'CATEGORIES'} onClick={() => setActiveTab('CATEGORIES')} icon={<Filter size={20} />} label="Catégories" />
                <NavItem active={activeTab === 'CONFIG'} onClick={() => setActiveTab('CONFIG')} icon={<Settings size={20} />} label="Configuration" />
@@ -3595,7 +3602,7 @@ ${itemsText}
                            <div className="bg-white/95 backdrop-blur-md px-4 py-2 rounded-full shadow-lg border border-slate-200 flex items-center gap-3">
                               <div className="flex items-center gap-1.5">
                                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                                 <span className="text-[10px] font-black uppercase text-slate-700">{propOrders.filter(o => o.status !== 'delivered' && !o.isArchived).length} Commandes</span>
+                                 <span className="text-[10px] font-black uppercase text-slate-700">{localOrders.filter(o => o.status !== 'delivered' && !o.isArchived).length} Commandes</span>
                               </div>
                               <div className="w-px h-3 bg-slate-200"></div>
                               <div className="flex items-center gap-1.5">

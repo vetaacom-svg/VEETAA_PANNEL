@@ -219,15 +219,19 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, debouncedRefresh)
       .subscribe();
 
-    // Polling fallback: every 30s
+    // Polling fallback: every 15s (reduced from 30s for faster updates)
+    // This is a safety net if realtime subscription fails
     const polling = setInterval(() => {
       try {
         const adminToken = localStorage.getItem('veetaa_admin_token');
-        if (adminToken) fetchOrders();
+        if (adminToken) {
+          // Only fetch without base64 to keep it fast
+          fetchOrders(false);
+        }
       } catch (e) {
         console.warn('Polling orders failed', e);
       }
-    }, 30000);
+    }, 15000);
 
     return () => {
       if (refreshTimeout) clearTimeout(refreshTimeout);
@@ -240,7 +244,9 @@ export default function App() {
 
   useEffect(() => {
     if (isAdminLogged) {
-      fetchOrders();
+      // Load orders immediately without waiting for 30s poll
+      console.log("Admin logged in - fetching orders immediately");
+      fetchOrders(false); // false = exclude base64 for speed
     }
   }, [isAdminLogged]);
 
@@ -251,8 +257,8 @@ export default function App() {
 
   const fetchData = async () => {
     console.log("REFRESHING DATA...");
-    // Charge toujours: categories, stores, products, annonces
-    // Charge admin data uniquement si admin est connecté
+    // Charge toujours: categories, stores, products, annonces, drivers, users
+    // Les données admin doivent toujours être disponibles pour la rapidité
     const isAdminMode = localStorage.getItem('veetaa_admin_token');
     
     const queries = [
@@ -260,83 +266,76 @@ export default function App() {
       supabase.from('stores').select('*'),
       supabase.from('announcements').select('*').order('created_at', { ascending: false }),
       supabase.from('products').select('*'),
-      supabase.from('sub_categories').select('*').order('name')
+      supabase.from('sub_categories').select('*').order('name'),
+      // TOUJOURS charger drivers et users pour l'admin (performance critique)
+      supabase.from('drivers').select('*'),
+      supabase.from('profiles').select('*'),
+      supabase.from('settings').select('*')
     ];
 
-    // Ajoute les requêtes admin seulement si nécessaire
-    if (isAdminMode) {
-      queries.push(
-        supabase.from('drivers').select('*'),
-        supabase.from('profiles').select('*'),
-        supabase.from('settings').select('*')
-      );
-    }
-
     const results = await Promise.all(queries);
-    const [catsRes, storesRes, annRes, productsRes, subCatsRes, ...adminRes] = results;
+    const [catsRes, storesRes, annRes, productsRes, subCatsRes, driversRes, usersRes, settingsRes] = results;
 
     if (catsRes.error) console.error("Error fetching categories:", catsRes.error);
     if (storesRes.error) console.error("Error fetching stores:", storesRes.error);
     if (annRes.error) console.error("Error fetching announcements:", annRes.error);
     if (productsRes.error) console.error("Error fetching products:", productsRes.error);
     if (subCatsRes?.error) console.error("Error fetching sub-categories:", subCatsRes.error);
+    if (driversRes?.error) console.error("Error fetching drivers:", driversRes.error);
+    if (usersRes?.error) console.error("Error fetching users:", usersRes.error);
+    if (settingsRes?.error) console.error("Error fetching settings:", settingsRes.error);
 
     setCategories(catsRes.data || []);
     setSubCategories(subCatsRes?.data || []);
 
-    // Traite les données admin seulement si elles existent
-    if (isAdminMode && adminRes.length >= 3) {
-      const [driversRes, usersRes, settingsRes] = adminRes;
-      if (driversRes.error) console.error("Error fetching drivers:", driversRes.error);
-      if (usersRes.error) console.error("Error fetching users:", usersRes.error);
-      if (settingsRes.error) console.error("Error fetching settings:", settingsRes.error);
+    // TOUJOURS traiter les données admin pour la rapidité
+    if (driversRes.data) {
+      console.log(`Loading ${driversRes.data.length} drivers`);
+      setDrivers(driversRes.data.map((d: any) => ({
+        ...d,
+        fullName: d.full_name,
+        idCardNumber: d.id_card_number,
+        profilePhoto: d.profile_photo,
+        lastLat: d.last_lat,
+        lastLng: d.last_lng,
+        createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
+      })));
+    }
+    if (usersRes.data) {
+      console.log(`Loading ${usersRes.data.length} users`);
+      setUsers(usersRes.data.map((u: any) => ({
+        id: u.id,
+        fullName: u.full_name,
+        phone: u.phone,
+        email: u.email,
+        language: u.language,
+        isAdmin: u.is_admin,
+        isBlocked: u.is_blocked,
+        lastLat: u.last_lat,
+        lastLng: u.last_lng
+      })));
+    }
+    if (settingsRes.data) {
+      const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
+      if (support) setSupportNumber(support.value);
 
-      if (driversRes.data) {
-        setDrivers(driversRes.data.map((d: any) => ({
-          ...d,
-          fullName: d.full_name,
-          idCardNumber: d.id_card_number,
-          profilePhoto: d.profile_photo,
-          lastLat: d.last_lat,
-          lastLng: d.last_lng,
-          createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
-        })));
+      const deliveryZoneSetting = settingsRes.data.find((s: any) => s.key === 'delivery_zone');
+      if (deliveryZoneSetting) {
+        setDeliveryZone(deliveryZoneSetting.value as 'kenitra' | 'all_morocco');
       }
-      if (usersRes.data) {
-        setUsers(usersRes.data.map((u: any) => ({
-          id: u.id,
-          fullName: u.full_name,
-          phone: u.phone,
-          email: u.email,
-          language: u.language,
-          isAdmin: u.is_admin,
-          isBlocked: u.is_blocked,
-          lastLat: u.last_lat,
-          lastLng: u.last_lng
-        })));
+
+      const feePerKmSetting = settingsRes.data.find((s: any) => s.key === 'delivery_fee_per_km');
+      if (feePerKmSetting) {
+        setDeliveryFeePerKm(Number(feePerKmSetting.value) || 3);
       }
-      if (settingsRes.data) {
-        const support = settingsRes.data.find((s: any) => s.key === 'support_number' || s.key === 'support_phone');
-        if (support) setSupportNumber(support.value);
 
-        const deliveryZoneSetting = settingsRes.data.find((s: any) => s.key === 'delivery_zone');
-        if (deliveryZoneSetting) {
-          setDeliveryZone(deliveryZoneSetting.value as 'kenitra' | 'all_morocco');
-        }
-
-        const feePerKmSetting = settingsRes.data.find((s: any) => s.key === 'delivery_fee_per_km');
-        if (feePerKmSetting) {
-          setDeliveryFeePerKm(Number(feePerKmSetting.value) || 3);
-        }
-
-        const pageVisibilitySetting = settingsRes.data.find((s: any) => s.key === 'page_visibility');
-        if (pageVisibilitySetting && pageVisibilitySetting.value) {
-          try {
-            const visibility = JSON.parse(pageVisibilitySetting.value);
-            setPageVisibility(visibility);
-          } catch (e) {
-            console.warn('Failed to parse page_visibility setting', e);
-          }
+      const pageVisibilitySetting = settingsRes.data.find((s: any) => s.key === 'page_visibility');
+      if (pageVisibilitySetting && pageVisibilitySetting.value) {
+        try {
+          const visibility = JSON.parse(pageVisibilitySetting.value);
+          setPageVisibility(visibility);
+        } catch (e) {
+          console.warn('Failed to parse page_visibility setting', e);
         }
       }
     }
@@ -383,11 +382,9 @@ export default function App() {
     }
     if (annRes.data) setAnnouncements(annRes.data);
 
-    // Fetch RIBs and support info seulement si admin
-    if (isAdminMode) {
-      const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
-      if (ribsData) setRibs(ribsData);
-    }
+    // Fetch RIBs in parallel (no longer conditional for better performance)
+    const { data: ribsData } = await supabase.from('ribs').select('*').order('id', { ascending: true });
+    if (ribsData) setRibs(ribsData);
 
     const { data: supportInfoData } = await supabase.from('support_info').select('*').limit(1);
     if (supportInfoData && supportInfoData.length > 0) {
@@ -401,17 +398,22 @@ export default function App() {
     setTimeout(() => setNotification(null), 5000);
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (includeLargeData: boolean = false) => {
     try {
-      // Fetch order data including base64 images (store invoice, prescription, payment receipt)
+      // OPTIMIZED: Two-stage loading for better performance
+      // Stage 1: Load essential fields only (excludes large base64 by default)
+      const selectFields = includeLargeData 
+        ? `id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng,
+           items, total_products, delivery_fee, total_final, payment_method, category_name, store_name,
+           assigned_driver_id, status_history, is_archived, store_rating, driver_rating,
+           store_invoice_base64, prescription_base64, payment_receipt_base64, text_order_notes, delivery_note`
+        : `id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng,
+           items, total_products, delivery_fee, total_final, payment_method, category_name, store_name,
+           assigned_driver_id, status_history, is_archived, store_rating, driver_rating, text_order_notes, delivery_note`;
+
       const { data, error } = await supabase
         .from('orders')
-        .select(`
-          id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng,
-          items, total_products, delivery_fee, total_final, payment_method, category_name, store_name,
-          assigned_driver_id, status_history, is_archived, store_rating, driver_rating,
-          store_invoice_base64, prescription_base64, payment_receipt_base64, text_order_notes, delivery_note
-        `)
+        .select(selectFields)
         .order('created_at', { ascending: false })
         .limit(200);
 
@@ -420,7 +422,7 @@ export default function App() {
         return;
       }
 
-      console.log(`FETCHED ORDERS: ${data?.length}`);
+      console.log(`FETCHED ORDERS: ${data?.length} (${includeLargeData ? 'with' : 'without'} base64 data)`);
 
       if (data && !error) {
         const mappedOrders: Order[] = data.map(o => ({
@@ -445,12 +447,12 @@ export default function App() {
           isArchived: Boolean(o.is_archived),
           storeRating: o.store_rating ? Number(o.store_rating) : undefined,
           driverRating: o.driver_rating ? Number(o.driver_rating) : undefined,
-          prescription_base64: o.prescription_base64 || undefined,
-          payment_receipt_base64: o.payment_receipt_base64 || undefined,
-          store_invoice_base64: o.store_invoice_base64 || undefined,
+          prescription_base64: includeLargeData ? (o.prescription_base64 || undefined) : undefined,
+          payment_receipt_base64: includeLargeData ? (o.payment_receipt_base64 || undefined) : undefined,
+          store_invoice_base64: includeLargeData ? (o.store_invoice_base64 || undefined) : undefined,
           deliveryNote: o.delivery_note || undefined,
-          prescriptionImage: o.prescription_base64 || undefined,
-          paymentReceiptImage: o.payment_receipt_base64 || undefined
+          prescriptionImage: includeLargeData ? (o.prescription_base64 || undefined) : undefined,
+          paymentReceiptImage: includeLargeData ? (o.payment_receipt_base64 || undefined) : undefined
         }));
         setOrders(mappedOrders);
       }
