@@ -85,30 +85,129 @@ const App: React.FC = () => {
     fetchStores();
   }, []);
 
-  // SIMULATION DU MOUVEMENT TEMPS RÉEL (1s)
+  // SIMULATION DU MOUVEMENT TEMPS RÉEL (1s) - décalage très faible pour haute précision
   useEffect(() => {
     const interval = setInterval(() => {
       setDrivers(prev => prev.map(d => ({
         ...d,
-        lat: d.lat + (Math.random() - 0.5) * 0.0001,
-        lng: d.lng + (Math.random() - 0.5) * 0.0001,
+        lat: d.lat + (Math.random() - 0.5) * 0.00001, // ~1.1m de variation maximale
+        lng: d.lng + (Math.random() - 0.5) * 0.00001, // ~1.1m de variation maximale
         lastUpdated: Date.now()
       })));
     }, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  const handleAddEntity = (type: 'user' | 'driver' | 'store', name: string, lat?: number, lng?: number) => {
+  const handleAddEntity = async (type: 'user' | 'driver' | 'store', name: string, lat?: number, lng?: number) => {
     const id = `${type}_${Date.now()}`;
-    const defaultLat = INITIAL_CENTER[0] + (Math.random() - 0.5) * 0.03;
-    const defaultLng = INITIAL_CENTER[1] + (Math.random() - 0.5) * 0.03;
+    const defaultLat = INITIAL_CENTER[0] + (Math.random() - 0.5) * 0.01;
+    const defaultLng = INITIAL_CENTER[1] + (Math.random() - 0.5) * 0.01;
 
     if (type === 'user') {
       setUsers(prev => [...prev, { id, name, lat: lat ?? defaultLat, lng: lng ?? defaultLng, isOrdering: false }]);
     } else if (type === 'driver') {
       setDrivers(prev => [...prev, { id, name, lat: lat ?? defaultLat, lng: lng ?? defaultLng, status: 'available', lastUpdated: Date.now() }]);
     } else {
-      setStores(prev => [...prev, { id, name, lat: lat!, lng: lng!, type: 'restaurant', address: 'Casablanca, Maroc' }]);
+      // Nouveau magasin
+      const newStore = { id, name, lat: lat!, lng: lng!, type: 'restaurant' as const, address: 'Casablanca, Maroc' };
+      
+      // Ajouter à l'état local d'abord (pour affichage immédiat)
+      setStores(prev => [...prev, newStore]);
+      
+      // Ensuite sauvegarder dans Supabase
+      try {
+        const { error } = await supabase
+          .from('stores')
+          .insert([{
+            id: id,
+            name: name,
+            latitude: lat!,
+            longitude: lng!,
+            category_id: 'restaurant',
+            is_active: true
+          }]);
+        
+        if (error) {
+          console.error('⚠️ Erreur insertion Supabase (local OK):', error);
+        } else {
+          console.log(`✅ Nouveau magasin "${name}" créé dans Supabase et affiché sur la carte`);
+        }
+      } catch (err) {
+        console.error('⚠️ Erreur lors de la création:', err);
+      }
+    }
+  };
+
+  const handleUpdateStoreCoordinates = async (storeId: string, lat: number, lng: number) => {
+    try {
+      console.log(`🔄 Mise à jour dans Supabase - Store: ${storeId}`);
+      console.log(`   Nouvelle Latitude: ${lat}, Nouvelle Longitude: ${lng}`);
+      
+      // 1️⃣ METTRE À JOUR LA BASE DE DONNÉES SUPABASE
+      const { error } = await supabase
+        .from('stores')
+        .update({ 
+          latitude: lat, 
+          longitude: lng 
+        })
+        .eq('id', storeId);
+
+      if (error) {
+        console.error('❌ Erreur mise à jour Supabase:', error);
+        alert(`❌ Erreur lors de la mise à jour : ${error.message}`);
+        return;
+      }
+
+      // 2️⃣ METTRE À JOUR L'ÉTAT LOCAL
+      setStores(prev => {
+        const updated = prev.map(s => 
+          s.id === storeId 
+            ? { ...s, lat, lng }  // Remplace complètement les anciennes coordonnées
+            : s
+        );
+        console.log(`✅ Mise à jour COMPLÈTE du magasin ${storeId}:`);
+        console.log(`   Ancien : supprimé ❌`);
+        console.log(`   Nouveau : Lat: ${lat}, Lng: ${lng} ✅`);
+        console.log(`   ✅ SAUVEGARDÉ DANS LA BASE DE DONNÉES`);
+        return updated;
+      });
+    } catch (err) {
+      console.error('❌ Erreur:', err);
+      alert('❌ Erreur lors de la mise à jour des coordonnées');
+    }
+  };
+
+  const handleDeleteStore = async (storeId: string) => {
+    if (!window.confirm('⚠️ Êtes-vous sûr de vouloir SUPPRIMER ce magasin ? Cette action est irréversible !')) {
+      return;
+    }
+    
+    const storeName = stores.find(s => s.id === storeId)?.name || storeId;
+    
+    try {
+      // 1️⃣ SUPPRIMER DE SUPABASE
+      const { error } = await supabase
+        .from('stores')
+        .delete()
+        .eq('id', storeId);
+
+      if (error) {
+        console.error('❌ Erreur suppression Supabase:', error);
+        alert(`❌ Erreur : ${error.message}`);
+        return;
+      }
+
+      // 2️⃣ SUPPRIMER DE L'ÉTAT LOCAL
+      setStores(prev => {
+        const filtered = prev.filter(s => s.id !== storeId);
+        console.log(`🗑️ Magasin "${storeName}" SUPPRIMÉ complètement ❌`);
+        console.log(`   ✅ Database Supabase mise à jour`);
+        console.log(`   Nombre de magasins restants: ${filtered.length}`);
+        return filtered;
+      });
+    } catch (err) {
+      console.error('❌ Erreur:', err);
+      alert('❌ Erreur lors de la suppression');
     }
   };
 
@@ -126,9 +225,11 @@ const App: React.FC = () => {
         orders={orders} users={users} stores={stores} drivers={drivers}
         selectedOrderId={selectedOrderId} onSelectOrder={setSelectedOrderId}
         onAddEntity={handleAddEntity} onSimulateOrder={handleSimulateOrder}
+        onUpdateStoreCoordinates={handleUpdateStoreCoordinates}
+        onDeleteStore={handleDeleteStore}
       />
       <main className="flex-1 relative">
-        <LiveMap stores={stores} drivers={drivers} users={users} orders={orders} selectedOrderId={selectedOrderId} />
+        <LiveMap stores={stores} drivers={drivers} users={users} orders={orders} selectedOrderId={selectedOrderId} onDeleteStore={handleDeleteStore} />
         <div className="absolute top-6 left-6 z-[1000] flex gap-3">
           <div className="bg-white/95 px-4 py-2 rounded-full shadow-lg border border-slate-200 flex items-center gap-3">
             <div className="flex items-center gap-1.5"><span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> <span className="text-[10px] font-bold uppercase">{orders.length} Commandes</span></div>

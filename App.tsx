@@ -564,18 +564,62 @@ export default function App() {
   }, []);
 
   const handleUpdateSettings = useCallback(async (key: string, value: string, options?: { silent?: boolean }) => {
-    const { error } = await supabase.from('settings').upsert({ key, value, updated_at: new Date().toISOString() });
-    if (error) {
-      showNotification("Erreur", "Impossible d'enregistrer les réglages.");
-      console.error(error);
-    } else {
-      if (key === 'support_number') setSupportNumber(value);
-      if (key === 'delivery_fee_per_km') {
-        const n = parseFloat(value as string);
-        if (!isNaN(n)) setDeliveryFeePerKm(n);
-      }
-      if (!options?.silent) showNotification("Réglages Enregistrés", "Les paramètres système ont été mis à jour.");
+    try {
+      console.log(`[Settings] Saving ${key} = ${value}`);
       
+      // Try to update first
+      const { data: existing, error: selectError } = await supabase
+        .from('settings')
+        .select('*')
+        .eq('key', key)
+        .single();
+
+      let error;
+      
+      if (existing) {
+        // Update if exists
+        const { error: updateError } = await supabase
+          .from('settings')
+          .update({ value, updated_at: new Date().toISOString() })
+          .eq('key', key);
+        error = updateError;
+        console.log(`[Settings] Updated existing row for key: ${key}`);
+      } else {
+        // Insert if doesn't exist
+        const { error: insertError } = await supabase
+          .from('settings')
+          .insert({ key, value, updated_at: new Date().toISOString() });
+        error = insertError;
+        console.log(`[Settings] Inserted new row for key: ${key}`);
+      }
+
+      if (error) {
+        console.error(`[Settings] Error for ${key}:`, error);
+        showNotification("Erreur", `Impossible d'enregistrer ${key}: ${error.message}`);
+      } else {
+        // Update local state for all settings
+        if (key === 'support_number') setSupportNumber(value);
+        if (key === 'delivery_fee_per_km') {
+          const n = parseFloat(value as string);
+          if (!isNaN(n)) {
+            setDeliveryFeePerKm(n);
+            console.log(`[Settings] Local state updated: delivery_fee_per_km = ${n}`);
+          }
+        }
+        if (key === 'delivery_zone') {
+          if (value === 'kenitra' || value === 'all_morocco') {
+            setDeliveryZone(value);
+            console.log(`[Settings] Local state updated: delivery_zone = ${value}`);
+          }
+        }
+        if (!options?.silent) {
+          showNotification("✓ Enregistré", `${key} = ${value}`);
+          console.log(`[Settings] Successfully saved ${key}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[Settings] Exception for ${key}:`, err);
+      showNotification("Erreur", "Erreur lors de la sauvegarde des paramètres");
     }
   }, []);
 

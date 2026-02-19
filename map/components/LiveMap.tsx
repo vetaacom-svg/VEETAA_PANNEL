@@ -12,6 +12,7 @@ interface MapProps {
   users: User[];
   orders: Order[];
   selectedOrderId: string | null;
+  onDeleteStore?: (storeId: string) => void;
 }
 
 const MapController: React.FC<{ targetPos: [number, number] | null }> = ({ targetPos }) => {
@@ -22,7 +23,7 @@ const MapController: React.FC<{ targetPos: [number, number] | null }> = ({ targe
   return null;
 };
 
-const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedOrderId }) => {
+const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedOrderId, onDeleteStore }) => {
   const selectedOrder = orders.find(o => o.id === selectedOrderId);
   const activeUser = selectedOrder ? users.find(u => u.id === selectedOrder.userId) : null;
   const activeStore = selectedOrder ? stores.find(s => s.id === selectedOrder.storeId) : null;
@@ -97,26 +98,44 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
 
           return (
             <Marker key={store.id} position={[store.lat, store.lng]} icon={storeIcon}>
-              <Popup>
-                <div className="p-2 min-w-[220px]">
-                  {/* Store image preview — use resolved src (img || fallback) */}
-                  {src ? (
-                    <div className="w-full h-24 overflow-hidden rounded-md mb-2">
-                      <img
-                        src={src}
-                        alt={store.name}
-                        className="w-full h-full object-cover"
-                        onError={(e: any) => { try { e.currentTarget.src = fallback; } catch {} }}
-                      />
-                    </div>
-                  ) : null}
-
-                  <h3 className="font-bold text-red-600 text-base">{store.name}</h3>
-                  <p className="text-[10px] text-gray-400 font-mono">ID: {store.id}</p>
-                  <div className="mt-2 text-xs border-t pt-2 space-y-1">
-                    <p><b>Type:</b> {store.type}</p>
-                    <p className="text-gray-500 italic">{store.address}</p>
+              <Popup minWidth={280} maxWidth={320} className="leaflet-popup-large">
+                <div className="p-3 min-w-[270px] space-y-3">
+                  {/* Store image preview — TOUJOURS affichée (image ou fallback) */}
+                  <div className="w-full h-28 overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                    <img
+                      src={src}
+                      alt={store.name}
+                      className="w-full h-full object-cover"
+                      onError={(e: any) => { try { e.currentTarget.src = fallback; } catch {} }}
+                    />
                   </div>
+
+                  <div>
+                    <h3 className="font-bold text-red-600 text-lg">{store.name}</h3>
+                    <p className="text-[9px] text-gray-500 font-mono">ID: {store.id}</p>
+                  </div>
+
+                  <div className="text-xs border-t pt-2 space-y-1">
+                    <p><b>🏷️ Type:</b> {store.type}</p>
+                    <p className="text-gray-600">📍 {store.address}</p>
+                    <p className="text-[9px] text-gray-400 font-mono">Lat: {store.lat?.toFixed(8)}, Lng: {store.lng?.toFixed(8)}</p>
+                  </div>
+                  
+                  {/* Bouton de suppression */}
+                  {onDeleteStore && (
+                    <button
+                      onClick={() => {
+                        if (window.confirm(
+                          `⚠️ Êtes-vous sûr de vouloir SUPPRIMER "${store.name}" ?\nCette action est irréversible !`
+                        )) {
+                          onDeleteStore(store.id);
+                        }
+                      }}
+                      className="w-full mt-2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-3 rounded-lg text-[12px] transition-colors flex items-center justify-center gap-2 shadow-md hover:shadow-lg"
+                    >
+                      🗑️ SUPPRIMER CE MAGASIN
+                    </button>
+                  )}
                 </div>
               </Popup>
             </Marker>

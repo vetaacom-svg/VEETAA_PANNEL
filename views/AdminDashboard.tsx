@@ -990,15 +990,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
    }, []);
 
-   // sync delivery fee per km when prop changes
-   useEffect(() => {
-      if (typeof propDeliveryFeePerKm !== 'undefined') setFeePerKm(propDeliveryFeePerKm);
-   }, [propDeliveryFeePerKm]);
-
    // Sync local orders with prop orders when props change
    useEffect(() => {
       setLocalOrders(propOrders);
    }, [propOrders]);
+
+   // Sync delivery settings with props when they change
+   useEffect(() => {
+      if (propDeliveryZone) {
+         setDeliveryZone(propDeliveryZone);
+         console.log(`AdminDashboard: deliveryZone synced from props to ${propDeliveryZone}`);
+      }
+      if (typeof propDeliveryFeePerKm !== 'undefined') {
+         setFeePerKm(propDeliveryFeePerKm);
+         console.log(`AdminDashboard: feePerKm synced from props to ${propDeliveryFeePerKm}`);
+      }
+   }, [propDeliveryZone, propDeliveryFeePerKm]);
 
    // États pour lier un store à la carte
    const [pickingStore, setPickingStore] = useState<Store | null>(null);

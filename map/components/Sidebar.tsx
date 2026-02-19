@@ -11,18 +11,55 @@ interface SidebarProps {
   onSelectOrder: (id: string) => void;
   onAddEntity: (type: 'user' | 'driver' | 'store', name: string, lat?: number, lng?: number) => void;
   onSimulateOrder: (userId: string) => void;
+  onUpdateStoreCoordinates: (storeId: string, lat: number, lng: number) => void;
+  onDeleteStore: (storeId: string) => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ orders, users, stores, drivers, selectedOrderId, onSelectOrder, onAddEntity, onSimulateOrder }) => {
+const Sidebar: React.FC<SidebarProps> = ({ orders, users, stores, drivers, selectedOrderId, onSelectOrder, onAddEntity, onSimulateOrder, onUpdateStoreCoordinates, onDeleteStore }) => {
   const [activeTab, setActiveTab] = useState<'orders' | 'admin'>('orders');
   const [name, setName] = useState('');
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
+  const [editingStoreId, setEditingStoreId] = useState<string | null>(null);
+  const [editLat, setEditLat] = useState('');
+  const [editLng, setEditLng] = useState('');
 
   const handleAddStore = () => {
     if (!name || !lat || !lng) return alert("Nom et coordonnées X/Y requis");
     onAddEntity('store', name, parseFloat(lat), parseFloat(lng));
     setName(''); setLat(''); setLng('');
+  };
+
+  const handleUpdateStore = (storeId: string) => {
+    // Validation stricte des coordonnées
+    const lat = parseFloat(editLat);
+    const lng = parseFloat(editLng);
+    
+    if (isNaN(lat) || isNaN(lng)) {
+      alert("⚠️ Coordonnées invalides. Veuillez entrer des nombres valides.");
+      return;
+    }
+    
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      alert("⚠️ Coordonnées hors limites. Latitude: -90 à 90, Longitude: -180 à 180");
+      return;
+    }
+
+    // Mise à jour des coordonnées
+    onUpdateStoreCoordinates(storeId, lat, lng);
+    
+    // Réinitialisation de l'éditeur
+    setEditingStoreId(null);
+    setEditLat('');
+    setEditLng('');
+    
+    console.log(`✅ Magasin ${storeId} mis à jour avec succès: ${lat}, ${lng}`);
+  };
+
+  const startEditingStore = (store: Store) => {
+    setEditingStoreId(store.id);
+    setEditLat(store.lat?.toString() || '');
+    setEditLng(store.lng?.toString() || '');
   };
 
   return (
@@ -58,6 +95,84 @@ const Sidebar: React.FC<SidebarProps> = ({ orders, users, stores, drivers, selec
           </div>
         ) : (
           <div className="space-y-6">
+            {/* MISE À JOUR DES MAGASINS EXISTANTS */}
+            {stores.length > 0 && (
+              <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                <h3 className="text-sm font-bold text-blue-700 mb-3">📍 Mettre à jour Magasins ({stores.length})</h3>
+                <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                  {stores.map(store => (
+                    <div key={store.id} className="bg-white p-3 rounded border border-blue-100 hover:bg-blue-50 transition-colors">
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex-1">
+                          <p className="text-xs font-bold text-slate-900">{store.name}</p>
+                          <span className="text-[8px] text-gray-500 font-mono">{store.id}</span>
+                        </div>
+                        <button 
+                          onClick={() => onDeleteStore(store.id)}
+                          className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-[9px] font-bold transition-colors ml-2"
+                          title="Supprimer ce magasin"
+                        >
+                          🗑️ SUPPR
+                        </button>
+                      </div>
+                      {editingStoreId === store.id ? (
+                        <div className="space-y-2 bg-orange-100 p-2 rounded border border-orange-300">
+                          <div className="flex gap-2">
+                            <input 
+                              type="number" 
+                              step="0.000001"
+                              placeholder="Latitude" 
+                              value={editLat} 
+                              onChange={e => setEditLat(e.target.value)} 
+                              className="flex-1 p-2 border border-orange-300 rounded text-xs bg-white"
+                              autoFocus
+                            />
+                            <input 
+                              type="number" 
+                              step="0.000001"
+                              placeholder="Longitude" 
+                              value={editLng} 
+                              onChange={e => setEditLng(e.target.value)} 
+                              className="flex-1 p-2 border border-orange-300 rounded text-xs bg-white"
+                            />
+                          </div>
+                          <p className="text-[9px] text-orange-600 font-bold">⚠️ Coordonnées en mode édition</p>
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={() => handleUpdateStore(store.id)}
+                              className="flex-1 bg-green-600 text-white py-1.5 rounded text-[10px] font-bold hover:bg-green-700 transition-colors"
+                            >
+                              ✓ SAUVER & REMPLACER
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setEditingStoreId(null);
+                                setEditLat('');
+                                setEditLng('');
+                              }}
+                              className="flex-1 bg-gray-400 text-white py-1.5 rounded text-[10px] font-bold hover:bg-gray-500 transition-colors"
+                            >
+                              ✕ ANNULER
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2 bg-green-50 p-2 rounded border border-green-200">
+                          <span className="text-[8px] text-green-700 font-mono font-bold">📍 {store.lat?.toFixed(8)}, {store.lng?.toFixed(8)}</span>
+                          <button 
+                            onClick={() => startEditingStore(store)}
+                            className="w-full bg-blue-600 text-white px-2 py-1 rounded text-[9px] font-bold hover:bg-blue-700 transition-colors"
+                          >
+                            ✏️ ÉDITER COORDONNÉES
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
               <h3 className="text-sm font-bold text-slate-700 mb-3">Nouveau Magasin (X/Y)</h3>
               <input type="text" placeholder="Nom" value={name} onChange={e => setName(e.target.value)} className="w-full p-2 border rounded mb-2 text-sm" />
