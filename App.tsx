@@ -73,7 +73,7 @@ export default function App() {
   const [deliveryZone, setDeliveryZone] = useState<'kenitra' | 'all_morocco'>('kenitra');
   // delivery fee per km (admin-configurable)
   const [deliveryFeePerKm, setDeliveryFeePerKm] = useState<number>(3);
-  
+
   const [pageVisibility, setPageVisibility] = useState({
     hideFinance: false,
     hideStatistics: false,
@@ -260,7 +260,7 @@ export default function App() {
     // Charge toujours: categories, stores, products, annonces, drivers, users
     // Les données admin doivent toujours être disponibles pour la rapidité
     const isAdminMode = localStorage.getItem('veetaa_admin_token');
-    
+
     const queries = [
       supabase.from('categories').select('*').order('display_order'),
       supabase.from('stores').select('*'),
@@ -285,7 +285,20 @@ export default function App() {
     if (usersRes?.error) console.error("Error fetching users:", usersRes.error);
     if (settingsRes?.error) console.error("Error fetching settings:", settingsRes.error);
 
-    setCategories(catsRes.data || []);
+    // Normalisation des images des catégories (Storage public URLs)
+    const normalizedCategories = (catsRes.data || []).map((cat: any) => {
+      const normalize = (val: any) => {
+        if (!val || typeof val !== 'string' || val.trim() === '') return undefined;
+        if (val.startsWith('http') || val.startsWith('data:')) return val;
+        try {
+          const { data } = supabase.storage.from('categories').getPublicUrl(val);
+          return data?.publicUrl;
+        } catch (e) { return undefined; }
+      };
+      return { ...cat, image_url: normalize(cat.image_url) };
+    });
+
+    setCategories(normalizedCategories);
     setSubCategories(subCatsRes?.data || []);
 
     // TOUJOURS traiter les données admin pour la rapidité
@@ -341,43 +354,78 @@ export default function App() {
     }
 
     if (storesRes.data && productsRes.data) {
-      console.log(`FETCHED: ${storesRes.data.length} stores, ${productsRes.data.length} products`);
-      const mappedStores: Store[] = storesRes.data.map(s => ({
-        id: s.id,
-        name: s.name,
-        category: s.category_id as CategoryID,
-        type: s.type,
-        image: s.image_url,
-        description: s.description,
-        menuImage: s.menu_image_url,
-        is_deleted: s.is_deleted || false,
-        is_active: s.is_active,
-        is_open: s.is_open,
-        is_featured: s.is_featured,
-        has_products: s.has_products,
-        delivery_time_min: s.delivery_time_min,
-        delivery_fee: s.delivery_fee,
-        maps_url: s.maps_url,
-        latitude: s.latitude ? Number(s.latitude) : null,
-        longitude: s.longitude ? Number(s.longitude) : null,
-        user_visible_fields: s.user_visible_fields,
-        user_field_labels: s.user_field_labels || {},
-        products: productsRes.data
-          .filter((p: any) => p.store_id === s.id)
-          .map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: p.price,
-            image: p.image_url,
-            description: p.description,
-            storeName: s.name,
-            store_id: p.store_id,
-            price_editable: p.price_editable,
-            product_images: p.product_images || p.images || [],
-            user_visible_fields: p.user_visible_fields,
-            user_field_labels: p.user_field_labels || {}
-          })),
-      }));
+      console.log(`FETCHED: ${storesRes.data.length} stores. RAW DATA FIRST STORE:`, storesRes.data[0]);
+      const mappedStores: Store[] = storesRes.data.map(s => {
+        // Logique de normalisation améliorée pour supporter les chemins storage, les URLs et le Base64 brut
+        const normalize = (val: any) => {
+          if (!val || typeof val !== 'string' || val.trim() === '') return undefined;
+
+          // 1. Détecter les URLs complètes ou le Base64 valide déjà préfixé
+          if (val.startsWith('http') || val.startsWith('data:')) return val;
+
+          // 2. Détecter le Base64 brut (chaîne longue sans espaces)
+          if (val.length > 100 && !val.includes(' ') && !val.includes('/')) {
+            return `data:image/png;base64,${val}`;
+          }
+
+          // 3. Tentative de résolution via Supabase Storage pour les chemins relatifs
+          const variants: string[] = [val];
+          if (!val.startsWith('stores/')) variants.push(`stores/${val}`);
+          if (!val.startsWith('public/')) variants.push(`public/${val}`);
+          const parts = val.split('/');
+          if (parts.length > 1) variants.push(parts[parts.length - 1]);
+
+          for (const v of variants) {
+            try {
+              const { data } = supabase.storage.from('stores').getPublicUrl(v);
+              if (data?.publicUrl && data.publicUrl.includes('/public/stores/')) return data.publicUrl;
+            } catch (e) { }
+          }
+          return undefined;
+        };
+
+        const resolvedImage = normalize(s.image_url) || normalize(s.image) || undefined;
+
+        return {
+          id: s.id,
+          name: s.name,
+          category: s.category_id as CategoryID,
+          category_id: s.category_id,
+          type: s.type,
+          image: resolvedImage,
+          image_url: resolvedImage,
+          description: s.description,
+          menuImage: s.menu_image_url,
+          is_deleted: s.is_deleted || false,
+          is_active: s.is_active,
+          is_open: s.is_open,
+          is_featured: s.is_featured,
+          has_products: s.has_products,
+          delivery_time_min: s.delivery_time_min,
+          delivery_fee: s.delivery_fee,
+          maps_url: s.maps_url,
+          rating: s.rating,
+          latitude: s.latitude ? Number(s.latitude) : null,
+          longitude: s.longitude ? Number(s.longitude) : null,
+          user_visible_fields: s.user_visible_fields,
+          user_field_labels: s.user_field_labels || {},
+          products: productsRes.data
+            .filter((p: any) => p.store_id === s.id)
+            .map((p: any) => ({
+              id: p.id,
+              name: p.name,
+              price: p.price,
+              image: p.image_url,
+              description: p.description,
+              storeName: s.name,
+              store_id: p.store_id,
+              price_editable: p.price_editable,
+              product_images: p.product_images || p.images || [],
+              user_visible_fields: p.user_visible_fields,
+              user_field_labels: p.user_field_labels || {}
+            })),
+        };
+      });
       setStores(mappedStores);
     }
     if (annRes.data) setAnnouncements(annRes.data);
@@ -402,7 +450,7 @@ export default function App() {
     try {
       // OPTIMIZED: Two-stage loading for better performance
       // Stage 1: Load essential fields only (excludes large base64 by default)
-      const selectFields = includeLargeData 
+      const selectFields = includeLargeData
         ? `id, user_id, created_at, status, customer_name, phone, delivery_lat, delivery_lng,
            items, total_products, delivery_fee, total_final, payment_method, category_name, store_name,
            assigned_driver_id, status_history, is_archived, store_rating, driver_rating,
@@ -505,7 +553,7 @@ export default function App() {
 
       setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status, statusHistory: newHistory } : o));
       showNotification("Statut Mis à jour", `Commande #${orderId} est maintenant: ${status}`);
-      
+
     } catch (err) {
       console.error("Erreur statut:", err);
     }
@@ -521,7 +569,7 @@ export default function App() {
     console.log("Archive success for:", orderId);
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isArchived: true } : o));
     showNotification("Archivée", `Commande #${orderId} a été déplacée vers l'historique.`);
-    
+
   }, []);
 
   const handleRestoreOrder = useCallback(async (orderId: string) => {
@@ -533,7 +581,7 @@ export default function App() {
     }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, isArchived: false } : o));
     showNotification("Restaurée", `Commande #${orderId} a été restaurée.`);
-    
+
   }, []);
 
   const handlePermanentDeleteOrder = useCallback(async (orderId: string) => {
@@ -545,14 +593,14 @@ export default function App() {
     }
     setOrders(prev => prev.filter(o => o.id !== orderId));
     showNotification("Supprimée Définitivement", `Commande #${orderId} a été supprimée.`);
-    
+
   }, []);
 
   const handleBanUser = useCallback(async (phone: string) => {
     await supabase.from('profiles').update({ is_blocked: true }).eq('phone', phone);
     setUsers(prev => prev.map(u => u.phone === phone ? { ...u, isBlocked: true } : u));
     showNotification("Utilisateur Banni", `L'utilisateur avec le numéro ${phone} a été banni.`);
-    
+
   }, []);
 
 
@@ -560,13 +608,13 @@ export default function App() {
     await supabase.from('orders').update({ assigned_driver_id: driverId }).eq('id', parseInt(orderId));
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, assignedDriverId: driverId } : o));
     showNotification("Livreur Assigné", `Livreur ID ${driverId} s'occupe de la commande.`);
-    
+
   }, []);
 
   const handleUpdateSettings = useCallback(async (key: string, value: string, options?: { silent?: boolean }) => {
     try {
       console.log(`[Settings] Saving ${key} = ${value}`);
-      
+
       // Try to update first
       const { data: existing, error: selectError } = await supabase
         .from('settings')
@@ -575,7 +623,7 @@ export default function App() {
         .single();
 
       let error;
-      
+
       if (existing) {
         // Update if exists
         const { error: updateError } = await supabase
@@ -630,7 +678,7 @@ export default function App() {
     } else if (data) {
       setAnnouncements(prev => [data[0], ...prev]);
       showNotification("Annonce Créée", "La nouvelle bannière est en ligne.");
-      
+
     }
   }, []);
 
@@ -641,7 +689,7 @@ export default function App() {
     } else {
       setAnnouncements(prev => prev.filter(a => a.id !== id));
       showNotification("Annonce Supprimée", "La bannière a été retirée.");
-      
+
     }
   }, []);
 

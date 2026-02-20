@@ -19,87 +19,106 @@ import { supabase, dataUrlToBlob } from '../lib/supabase';
 
 // Lightweight, memoized product card to avoid re-renders while scrolling
 type ProductCardProps = {
-  id: string;
-  name: string;
-  storeName?: string;
-  price?: number;
-  image?: string;
-  onEdit: (id: string) => void;
-  onDelete: (id: string) => void;
+   id: string;
+   name: string;
+   storeName?: string;
+   price?: number;
+   image?: string;
+   onEdit: (id: string) => void;
+   onDelete: (id: string) => void;
 };
 const ProductCard: React.FC<ProductCardProps> = React.memo(({ id, name, storeName, price, image, onEdit, onDelete }) => {
-  return (
-     <div className="bg-white rounded-[2.5rem] border p-4 group hover:shadow-md transition-shadow duration-150 relative overflow-hidden" style={{willChange: 'transform, opacity'}}>
-        <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-           <button onClick={() => onEdit(id)} className="p-2 bg-white/90 text-slate-600 rounded-xl shadow-sm hover:text-orange-600"><Edit3 size={16} /></button>
-           <button onClick={() => onDelete(id)} className="p-2 bg-white/90 text-red-500 rounded-xl shadow-sm hover:bg-red-50"><Trash2 size={16} /></button>
-        </div>
-        <img src={image} loading="lazy" width={400} height={200} decoding="async" className="w-full h-40 object-cover rounded-[1.75rem] mb-4" />
-        <div className="p-2">
-           <h4 className="font-black text-slate-800 text-sm mb-1 truncate">{name}</h4>
-           <p className="text-[10px] text-slate-400 mb-2 truncate">{storeName || 'Marque inconnue'}</p>
-           <div className="flex justify-between items-center text-orange-600 font-black">{price} DH</div>
-        </div>
-     </div>
-  );
+   return (
+      <div className="bg-white rounded-[2.5rem] border p-4 group hover:shadow-md transition-shadow duration-150 relative overflow-hidden" style={{ willChange: 'transform, opacity' }}>
+         <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+            <button onClick={() => onEdit(id)} className="p-2 bg-white/90 text-slate-600 rounded-xl shadow-sm hover:text-orange-600"><Edit3 size={16} /></button>
+            <button onClick={() => onDelete(id)} className="p-2 bg-white/90 text-red-500 rounded-xl shadow-sm hover:bg-red-50"><Trash2 size={16} /></button>
+         </div>
+         <img src={image} loading="lazy" width={400} height={200} decoding="async" className="w-full h-40 object-cover rounded-[1.75rem] mb-4" />
+         <div className="p-2">
+            <h4 className="font-black text-slate-800 text-sm mb-1 truncate">{name}</h4>
+            <p className="text-[10px] text-slate-400 mb-2 truncate">{storeName || 'Marque inconnue'}</p>
+            <div className="flex justify-between items-center text-orange-600 font-black">{price} DH</div>
+         </div>
+      </div>
+   );
 }, (a, b) => a.id === b.id && a.name === b.name && a.price === b.price && a.image === b.image && a.storeName === b.storeName);
 
 // Lightweight, memoized store card for the PARTNERS tab
 type StoreCardProps = {
-  id: string;
-  image_url?: string;
-  image?: string;
-  name: string;
-  category_id?: string;
-  latitude?: number | null;
-  longitude?: number | null;
-  is_open?: boolean;
-  is_active?: boolean;
-  rating?: number;
-  onEdit: (id: string) => void;
-  onToggleOpen: (id: string, current: boolean | undefined) => void;
-  onToggleActive: (id: string, current: boolean | undefined) => void;
-  onDelete: (id: string) => void;
+   id: string;
+   image_url?: string;
+   image?: string;
+   name: string;
+   category_id?: string;
+   latitude?: number | null;
+   longitude?: number | null;
+   is_open?: boolean;
+   is_active?: boolean;
+   rating?: number;
+   categoryImage?: string; // image de secours depuis la base de données categories
+   onEdit: (id: string) => void;
+   onToggleOpen: (id: string, current: boolean | undefined) => void;
+   onToggleActive: (id: string, current: boolean | undefined) => void;
+   onDelete: (id: string) => void;
 };
-const StoreCard: React.FC<StoreCardProps> = React.memo(({ id, image_url, image, name, category_id, latitude, longitude, is_open, is_active, rating, onEdit, onToggleOpen, onToggleActive, onDelete }) => {
-  return (
-     <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm space-y-4" style={{willChange: 'transform, opacity'}}>
-        <div className="flex items-center gap-4">
-           <img src={image_url || image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} loading="lazy" width={64} height={64} decoding="async" className="w-16 h-16 rounded-[1.25rem] object-cover" />
-           <div className="flex-1">
-              <h4 className="font-black text-lg truncate">{name}</h4>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{category_id}</p>
-              {(latitude && longitude) ? (
-                 <div className="flex items-center gap-1 mt-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg w-fit">
-                    <MapPin size={10} />
-                    <span className="text-[9px] font-mono font-bold">{latitude.toFixed(4)}, {longitude.toFixed(4)}</span>
-                 </div>
-              ) : (
-                 <div className="flex items-center gap-1 mt-1 text-slate-400 bg-slate-50 px-2 py-1 rounded-lg w-fit">
-                    <MapPin size={10} />
-                    <span className="text-[9px] font-mono">Pas de coordonnées</span>
-                 </div>
-              )}
-           </div>
-           <div className="flex flex-col gap-2">
-              <button onClick={() => onToggleOpen(id, !!is_open)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                 {is_open ? 'Ouvert' : 'Fermé'}
-              </button>
-              <button onClick={() => onToggleActive(id, !!is_active)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${is_active ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                 {is_active ? 'Visible' : 'Caché'}
-              </button>
-           </div>
-        </div>
-        <div className="flex justify-between items-center pt-4 border-t">
-           <div className="flex items-center gap-1 text-orange-500"><Star size={14} fill="currentColor" /><span className="text-xs font-black">{rating || '4.5'}</span></div>
-           <div className="flex gap-2">
-              <button onClick={() => onEdit(id)} className="p-2 bg-slate-100 rounded-lg"><Edit3 size={16} /></button>
-              <button onClick={() => onDelete(id)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 size={16} /></button>
-           </div>
-        </div>
-     </div>
-  );
-}, (a, b) => a.id === b.id && a.name === b.name && a.image_url === b.image_url && a.is_open === b.is_open && a.is_active === b.is_active && a.rating === b.rating);
+const StoreCard: React.FC<StoreCardProps> = React.memo(({ id, image_url, image, name, category_id, latitude, longitude, is_open, is_active, rating, categoryImage, onEdit, onToggleOpen, onToggleActive, onDelete }) => {
+   // Image directement depuis la base de données (image_url ou image)
+   // Si les deux sont vides, on utilise l'image de la catégorie (chargée depuis la DB aussi)
+   const imgSrc = image_url || image || categoryImage || null;
+
+   return (
+      <div className="bg-white p-6 rounded-[2.5rem] border shadow-sm space-y-4" style={{ willChange: 'transform, opacity' }}>
+         <div className="flex items-center gap-4">
+            {imgSrc ? (
+               <img
+                  src={imgSrc}
+                  alt={name}
+                  loading="lazy"
+                  width={64}
+                  height={64}
+                  decoding="async"
+                  className="w-16 h-16 rounded-[1.25rem] object-cover"
+               />
+            ) : (
+               <div className="w-16 h-16 rounded-[1.25rem] bg-slate-100 flex items-center justify-center text-slate-400 text-xs font-bold">
+                  IMG
+               </div>
+            )}
+            <div className="flex-1">
+               <h4 className="font-black text-lg truncate">{name}</h4>
+               <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{category_id}</p>
+               {(latitude && longitude) ? (
+                  <div className="flex items-center gap-1 mt-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg w-fit">
+                     <MapPin size={10} />
+                     <span className="text-[9px] font-mono font-bold">{latitude.toFixed(4)}, {longitude.toFixed(4)}</span>
+                  </div>
+               ) : (
+                  <div className="flex items-center gap-1 mt-1 text-slate-400 bg-slate-50 px-2 py-1 rounded-lg w-fit">
+                     <MapPin size={10} />
+                     <span className="text-[9px] font-mono">Pas de coordonnées</span>
+                  </div>
+               )}
+            </div>
+            <div className="flex flex-col gap-2">
+               <button onClick={() => onToggleOpen(id, !!is_open)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${is_open ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                  {is_open ? 'Ouvert' : 'Fermé'}
+               </button>
+               <button onClick={() => onToggleActive(id, !!is_active)} className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${is_active ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                  {is_active ? 'Visible' : 'Caché'}
+               </button>
+            </div>
+         </div>
+         <div className="flex justify-between items-center pt-4 border-t">
+            <div className="flex items-center gap-1 text-orange-500"><Star size={14} fill="currentColor" /><span className="text-xs font-black">{rating || '4.5'}</span></div>
+            <div className="flex gap-2">
+               <button onClick={() => onEdit(id)} className="p-2 bg-slate-100 rounded-lg"><Edit3 size={16} /></button>
+               <button onClick={() => onDelete(id)} className="p-2 bg-red-50 text-red-500 rounded-lg"><Trash2 size={16} /></button>
+            </div>
+         </div>
+      </div>
+   );
+}, (a, b) => a.id === b.id && a.name === b.name && a.image_url === b.image_url && a.image === b.image && a.is_open === b.is_open && a.is_active === b.is_active && a.rating === b.rating);
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -497,11 +516,12 @@ const MapComponent: React.FC<{
    orders: Order[],
    users: UserProfile[],
    stores: Store[],
+   categories: any[],
    selectedOrderId?: string | null,
    onMapClick?: (lat: number, lng: number) => void,
    pickingPos?: [number, number] | null,
    pickingStore?: Store | null
-}> = ({ drivers, orders, users, stores, selectedOrderId, onMapClick, pickingPos, pickingStore }) => {
+}> = ({ drivers, orders, users, stores, categories, selectedOrderId, onMapClick, pickingPos, pickingStore }) => {
    const selectedOrder = orders.find(o => o.id === selectedOrderId);
 
    // Détermination des entités actives pour les tracés
@@ -542,10 +562,14 @@ const MapComponent: React.FC<{
    const createStoreIcon = (store: Store) => {
       const img = store.image_url || (store as any).image;
 
-      // génère un avatar SVG data-uri à partir du nom si pas d'image
+      // Fallback 1: Image de la catégorie depuis la DB
+      const category = categories.find(c => c.id === store.category_id);
+      const catImg = category?.image_url;
+
+      // Fallback 2: SVG généré (dernier recours)
       const makeInitialsSvg = (name = '') => {
-         const initials = (name.split(' ').map(s => s[0]).filter(Boolean).slice(0,2).join('') || 'S').toUpperCase();
-         const colors = ['#f97316','#06b6d4','#ef4444','#10b981','#8b5cf6','#f43f5e','#f59e0b'];
+         const initials = (name.split(' ').map(s => s[0]).filter(Boolean).slice(0, 2).join('') || 'S').toUpperCase();
+         const colors = ['#f97316', '#06b6d4', '#ef4444', '#10b981', '#8b5cf6', '#f43f5e', '#f59e0b'];
          const hash = Array.from(initials).reduce((acc, c) => acc + c.charCodeAt(0), 0);
          const bg = colors[hash % colors.length];
          const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>` +
@@ -555,12 +579,13 @@ const MapComponent: React.FC<{
          return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
       };
 
-      const src = img || makeInitialsSvg(store.name || 'Store');
+      const fallback = catImg || makeInitialsSvg(store.name || 'Store');
+      const src = img || fallback;
 
       return L.divIcon({
          html: `<div class="relative w-10 h-10 rounded-full border-4 border-orange-500 overflow-hidden shadow-2xl bg-white transition-transform hover:scale-110">` +
-                   `<img src="${src}" class="w-full h-full object-cover"/>` +
-                `</div>`,
+            `<img src="${src}" onerror="this.onerror=null;this.src='${fallback}'" class="w-full h-full object-cover"/>` +
+            `</div>`,
          className: '',
          iconSize: [40, 40],
          iconAnchor: [20, 20]
@@ -1060,7 +1085,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
 
    // Balance filter for drivers (24H, 2J, 3J, 4J, 5J, 7J)
-   const [balanceRange, setBalanceRange] = useState<'24H'|'2J'|'3J'|'4J'|'5J'|'7J'>('24H');
+   const [balanceRange, setBalanceRange] = useState<'24H' | '2J' | '3J' | '4J' | '5J' | '7J'>('24H');
 
    // --- Search input: use uncontrolled input + debounce to avoid re-renders on every keystroke ---
    const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -1108,7 +1133,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       }
    }, [propCategories]);
 
-      
+
 
    const handleManualRefresh = async () => {
       setIsRefreshing(true);
@@ -1197,7 +1222,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [showAddRIB, setShowAddRIB] = useState(false);
    const [editingRIB, setEditingRIB] = useState<RIB | null>(null);
    const [supportTickets, setSupportTickets] = useState<SupportTicket[]>([]);
-      
+
    const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
    const [supportMessages, setSupportMessages] = useState<SupportMessage[]>([]);
    const [replyText, setReplyText] = useState('');
@@ -1875,22 +1900,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const handleUpdateDriverWarns = async (id: string, newVal: number) => {
       // Optimistic update: update local state immediately
       setLocalDrivers(prev => prev.map(d => d.id === id ? { ...d, warns: newVal } : d));
-      
+
       // Show animation state
       setUpdatingWarnings(prev => new Set([...prev, id]));
-      
+
       // Update database in background
       const { error } = await supabase.from('drivers').update({ warns: newVal }).eq('id', id);
-      
+
       // Stop animation
       setTimeout(() => {
-        setUpdatingWarnings(prev => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
+         setUpdatingWarnings(prev => {
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+         });
       }, 600);
-      
+
       if (error) {
          console.error("Erreur lors de la mise à jour:", error);
          // Revert on error by fetching fresh data
@@ -2035,9 +2060,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const isArchivedStatus = newStatus === 'delivered' || newStatus === 'refused' || newStatus === 'unavailable';
 
       // OPTIMISTIC UPDATE - mise à jour immédiate du state local
-      setLocalOrders(prev => prev.map(o => o.id === id ? { 
-         ...o, 
-         status: newStatus, 
+      setLocalOrders(prev => prev.map(o => o.id === id ? {
+         ...o,
+         status: newStatus,
          statusHistory: updatedHistory,
          isArchived: isArchivedStatus
       } : o));
@@ -2195,10 +2220,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const [lat, lng] = pickingPos;
       const mapsUrl = `https://www.google.com/maps?query=${lat},${lng}`;
 
+      // FIX: utiliser 'latitude'/'longitude' (noms corrects des colonnes DB)
       const { error } = await supabase.from('stores').update({
          maps_url: mapsUrl,
-         lat: lat,
-         lng: lng
+         latitude: lat,
+         longitude: lng
       }).eq('id', pickingStore.id);
 
       if (error) {
@@ -2282,30 +2308,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const formData = new FormData(form);
 
       // Local preview URL (can be a data: URI) used for optimistic UI
-      const localPreviewUrl = storeImagePreview || editingStore?.image_url || '';
+      // FIX: fallback sur .image car fetchData() mappe image_url → .image dans le state local
+      const localPreviewUrl = storeImagePreview || editingStore?.image_url || (editingStore as any)?.image || '';
 
       // Build the canonical store data to persist (do NOT include data: URIs in DB)
       const storeVisibleFields = STORE_UI_FIELD_KEYS.filter(k => storeUserVisible[k] !== false);
       const storeFieldLabels: Record<string, string> = {};
       STORE_UI_FIELD_KEYS.forEach(k => {
-            // prefer form values (user may have typed and not blurred) else fallback to state
-            const formKey = `user_label_${k}`;
-            const formVal = String(formData.get(formKey) || '');
-            const val = formVal?.trim() || (storeUserLabels[k]?.trim() || '');
-            if (val) storeFieldLabels[k] = val;
-         });
-         const formCustomOrder = String(formData.get('custom_order_description') || '');
-         const customOrderVal = formCustomOrder.trim() || (storeUserLabels.custom_order_description?.trim() || '');
-         if (customOrderVal) storeFieldLabels.custom_order_description = customOrderVal;
+         // prefer form values (user may have typed and not blurred) else fallback to state
+         const formKey = `user_label_${k}`;
+         const formVal = String(formData.get(formKey) || '');
+         const val = formVal?.trim() || (storeUserLabels[k]?.trim() || '');
+         if (val) storeFieldLabels[k] = val;
+      });
+      const formCustomOrder = String(formData.get('custom_order_description') || '');
+      const customOrderVal = formCustomOrder.trim() || (storeUserLabels.custom_order_description?.trim() || '');
+      if (customOrderVal) storeFieldLabels.custom_order_description = customOrderVal;
       const storeData: any = {
          name: formData.get('name') as string,
          category_id: formData.get('category_id') as string,
          sub_category: formData.get('sub_category') as string,
          delivery_time_min: parseInt(formData.get('delivery_time_min') as string),
-         delivery_fee: parseFloat(formData.get('delivery_fee') as string),
          maps_url: formData.get('maps_url') as string,
          // keep DB image_url empty for now if we're uploading a data URI — we'll patch later
-         image_url: editingStore?.image_url || '',
+         image_url: editingStore?.image_url || (editingStore as any)?.image || '',
          is_active: true,
          is_open: true,
          is_featured: formData.get('is_featured') === 'on',
@@ -2418,7 +2444,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
    const displayOrders = useMemo(() => {
       const terminalStatuses = ['delivered', 'refused', 'unavailable'];
-      
+
       const filtered = localOrders.filter(o => {
          // HISTORY: show archived orders OR orders with terminal status (delivered, refused, unavailable)
          if (activeTab === 'HISTORY') {
@@ -2436,7 +2462,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          const matchesDate = !dateFilter || new Date(o.timestamp).toLocaleDateString() === new Date(dateFilter).toLocaleDateString();
          return matchesSearch && matchesStatus && matchesStore && matchesDate;
       });
-      
+
       // Log for debugging
       if (activeTab === 'HISTORY') {
          const invoicesCount = filtered.filter(o => o.store_invoice_base64)?.length || 0;
@@ -2445,7 +2471,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (activeTab === 'ORDERS') {
          console.log(`ORDERS Tab: ${filtered.length} active orders displayed (non-archived, non-terminal)`);
       }
-      
+
       return filtered;
    }, [localOrders, activeTab, debouncedSearchTerm, statusFilter, storeFilter, dateFilter]);
 
@@ -2453,15 +2479,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const paginatedOrders = useMemo(() => displayOrders.slice(startIndex, startIndex + itemsPerPage), [displayOrders, startIndex, itemsPerPage]);
    const totalPages = useMemo(() => Math.ceil(displayOrders.length / itemsPerPage), [displayOrders.length, itemsPerPage]);
 
-      // Diagnostic: when admin opens ORDERS tab, log counts and active filters to help debugging
-      useEffect(() => {
-         if (activeTab !== 'ORDERS') return;
-         console.log('DEBUG ORDERS VIEW — localOrders count:', localOrders.length, 'displayOrders count:', displayOrders.length, 'paginated:', paginatedOrders.length);
-         console.log('DEBUG ORDERS FILTERS', { statusFilter, storeFilter, dateFilter, search: debouncedSearchTerm });
-         if (localOrders.length > 0 && displayOrders.length === 0) {
-            console.warn('There are orders in the dataset but none match the current filters — try clearing search/date/status/store filters.');
-         }
-      }, [activeTab, localOrders.length, displayOrders.length, paginatedOrders.length, statusFilter, storeFilter, dateFilter, debouncedSearchTerm]);
+   // Diagnostic: when admin opens ORDERS tab, log counts and active filters to help debugging
+   useEffect(() => {
+      if (activeTab !== 'ORDERS') return;
+      console.log('DEBUG ORDERS VIEW — localOrders count:', localOrders.length, 'displayOrders count:', displayOrders.length, 'paginated:', paginatedOrders.length);
+      console.log('DEBUG ORDERS FILTERS', { statusFilter, storeFilter, dateFilter, search: debouncedSearchTerm });
+      if (localOrders.length > 0 && displayOrders.length === 0) {
+         console.warn('There are orders in the dataset but none match the current filters — try clearing search/date/status/store filters.');
+      }
+   }, [activeTab, localOrders.length, displayOrders.length, paginatedOrders.length, statusFilter, storeFilter, dateFilter, debouncedSearchTerm]);
 
    // --- GLOBAL SEARCH FILTERS ---
    const lowerSearch = debouncedSearchTerm.toLowerCase();
@@ -2508,25 +2534,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    }), [supportTickets, supportFilter, lowerSearch]);
 
    // Memoized rendered lists (declared unconditionally to preserve Hooks order)
-   const memoizedStoreCards = useMemo(() => filteredStores.map(s => (
-      <StoreCard
-         key={s.id}
-         id={s.id}
-         image_url={s.image_url}
-         image={s.image}
-         name={s.name}
-         category_id={s.category_id}
-         latitude={s.latitude}
-         longitude={s.longitude}
-         is_open={s.is_open}
-         is_active={s.is_active}
-         rating={s.rating}
-         onEdit={onEditStore}
-         onToggleOpen={onToggleOpenStore}
-         onToggleActive={onToggleActiveStore}
-         onDelete={onDeleteStoreStable}
-      />
-   )), [filteredStores, onEditStore, onToggleOpenStore, onToggleActiveStore, onDeleteStoreStable]);
+   const memoizedStoreCards = useMemo(() => filteredStores.map(s => {
+      const cat = dbCategories.find(c => c.id === s.category_id);
+      return (
+         <StoreCard
+            key={s.id}
+            id={s.id}
+            image_url={s.image_url}
+            image={s.image}
+            name={s.name}
+            category_id={s.category_id}
+            latitude={s.latitude}
+            longitude={s.longitude}
+            is_open={s.is_open}
+            is_active={s.is_active}
+            rating={s.rating}
+            categoryImage={cat?.image_url}
+            onEdit={onEditStore}
+            onToggleOpen={onToggleOpenStore}
+            onToggleActive={onToggleActiveStore}
+            onDelete={onDeleteStoreStable}
+         />
+      );
+   }), [filteredStores, dbCategories, onEditStore, onToggleOpenStore, onToggleActiveStore, onDeleteStoreStable]);
 
    const memoizedProductCards = useMemo(() => filteredProducts.map((p) => (
       <ProductCard
@@ -3018,7 +3048,7 @@ ${itemsText}
                   <NavItem active={activeTab === 'STATISTICS'} onClick={() => setActiveTab('STATISTICS')} icon={<BarChart3 size={20} />} label="Statistiques" />
                )}
                <NavItem active={activeTab === 'HISTORY'} onClick={() => setActiveTab('HISTORY')} icon={<Clock size={20} />} label="Historique" badge={localOrders.filter(o => o.isArchived).length} />
-               
+
                <NavItem active={activeTab === 'CATEGORIES'} onClick={() => setActiveTab('CATEGORIES')} icon={<Filter size={20} />} label="Catégories" />
                <NavItem active={activeTab === 'CONFIG'} onClick={() => setActiveTab('CONFIG')} icon={<Settings size={20} />} label="Configuration" />
                <NavItem
@@ -3184,20 +3214,20 @@ ${itemsText}
                                              console.log('Customer Name:', o.customerName);
                                              console.log('Phone:', o.phone);
                                              console.log('UserID:', o.userId);
-                                             
+
                                              // First try to find user in database by userId
                                              let foundUser = null;
                                              if (o.userId) {
                                                 foundUser = users.find(u => u.id === o.userId);
                                                 console.log('Found user by userId:', foundUser);
                                              }
-                                             
+
                                              // If not found, try by phone
                                              if (!foundUser && o.phone) {
                                                 foundUser = users.find(u => u.phone === o.phone);
                                                 console.log('Found user by phone:', foundUser);
                                              }
-                                             
+
                                              // If user found in database, use all their info
                                              if (foundUser) {
                                                 console.log('Using user from database:', foundUser);
@@ -3326,7 +3356,7 @@ ${itemsText}
                   </div>
                )}
 
-               
+
 
                {/* FINANCE (RESTAURÉE) */}
                {activeTab === 'FINANCE' && (
@@ -3598,6 +3628,7 @@ ${itemsText}
                            orders={propOrders}
                            users={users}
                            stores={stores}
+                           categories={dbCategories}
                            selectedOrderId={selectedOrderId}
                            onMapClick={(lat, lng) => pickingStore && setPickingPos([lat, lng])}
                            pickingPos={pickingPos}
@@ -3669,7 +3700,7 @@ ${itemsText}
                         <div className="flex items-center gap-6">
                            <h3 className="text-xl font-black uppercase">Gestion des Livreurs</h3>
                            <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-full">
-                              {['24H','2J','3J','4J','5J','7J'].map(opt => (
+                              {['24H', '2J', '3J', '4J', '5J', '7J'].map(opt => (
                                  <button
                                     key={opt}
                                     onClick={() => setBalanceRange(opt as any)}
@@ -3768,8 +3799,8 @@ ${itemsText}
                                     </td>
                                     <td className={`px-8 py-5 transition-all duration-300 ${updatingWarnings.has(d.id) ? 'bg-yellow-50 shadow-lg shadow-yellow-200' : ''}`}>
                                        <div className="flex items-center gap-2 justify-center">
-                                          <button 
-                                             onClick={() => handleUpdateDriverWarns(d.id, Math.max(0, (d.warns || 0) - 1))} 
+                                          <button
+                                             onClick={() => handleUpdateDriverWarns(d.id, Math.max(0, (d.warns || 0) - 1))}
                                              className={`p-1 hover:bg-slate-100 rounded transition-all ${updatingWarnings.has(d.id) ? 'opacity-50' : ''}`}
                                           >
                                              -
@@ -3777,8 +3808,8 @@ ${itemsText}
                                           <div className={`px-3 py-1 rounded-lg font-black transition-all duration-300 ${(d.warns || 0) > 0 ? 'text-red-500 bg-red-50' : 'text-slate-400'} ${updatingWarnings.has(d.id) ? 'scale-125 animate-pulse' : 'scale-100'}`}>
                                              {d.warns || 0}
                                           </div>
-                                          <button 
-                                             onClick={() => handleUpdateDriverWarns(d.id, (d.warns || 0) + 1)} 
+                                          <button
+                                             onClick={() => handleUpdateDriverWarns(d.id, (d.warns || 0) + 1)}
                                              className={`p-1 hover:bg-slate-100 rounded transition-all ${updatingWarnings.has(d.id) ? 'opacity-50' : ''}`}
                                           >
                                              +
@@ -3816,7 +3847,7 @@ ${itemsText}
 
                {/* CATALOGUE */}
                {activeTab === 'PRODUCTS' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8" style={{willChange: 'transform'}}>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8" style={{ willChange: 'transform' }}>
                      <div onClick={() => {
                         setEditingProduct(null);
                         setProductImagePreview(null);
@@ -3966,11 +3997,10 @@ ${itemsText}
                                     setDeliveryZone('kenitra');
                                     onUpdateSettings('delivery_zone', 'kenitra');
                                  }}
-                                 className={`p-6 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all active:scale-95 ${
-                                    deliveryZone === 'kenitra'
-                                       ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-lg shadow-indigo-200'
-                                       : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300'
-                                 }`}
+                                 className={`p-6 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all active:scale-95 ${deliveryZone === 'kenitra'
+                                    ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-lg shadow-indigo-200'
+                                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-indigo-300'
+                                    }`}
                               >
                                  <MapPin size={20} className="mx-auto mb-2" />
                                  Kenitra uniquement
@@ -3981,11 +4011,10 @@ ${itemsText}
                                     setDeliveryZone('all_morocco');
                                     onUpdateSettings('delivery_zone', 'all_morocco');
                                  }}
-                                 className={`p-6 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all active:scale-95 ${
-                                    deliveryZone === 'all_morocco'
-                                       ? 'bg-green-50 border-green-500 text-green-700 shadow-lg shadow-green-200'
-                                       : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-green-300'
-                                 }`}
+                                 className={`p-6 rounded-2xl border-2 font-black uppercase text-xs tracking-widest transition-all active:scale-95 ${deliveryZone === 'all_morocco'
+                                    ? 'bg-green-50 border-green-500 text-green-700 shadow-lg shadow-green-200'
+                                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:border-green-300'
+                                    }`}
                               >
                                  <MapPin size={20} className="mx-auto mb-2" />
                                  Tout le Maroc
@@ -4335,7 +4364,7 @@ ${itemsText}
             showDeleteStoreModal && storeToDelete && (
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                   <div className="absolute inset-0 bg-slate-900/80 transition-opacity duration-150" onClick={() => setShowDeleteStoreModal(false)}></div>
-                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-lg overflow-hidden transition-transform transition-opacity duration-200 ease-out transform-gpu" style={{willChange: 'transform, opacity'}}>
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-lg overflow-hidden transition-transform transition-opacity duration-200 ease-out transform-gpu" style={{ willChange: 'transform, opacity' }}>
                      <header className="p-8 border-b flex justify-between items-center bg-red-50">
                         <div className="flex items-center gap-3">
                            <div className="p-3 bg-red-100 text-red-600 rounded-2xl">
@@ -4351,7 +4380,7 @@ ${itemsText}
                         {/* Informations sur la marque */}
                         <div className="bg-slate-50 p-6 rounded-2xl border-l-4 border-red-500 space-y-3">
                            <div className="flex items-center gap-3">
-                              <img src={storeToDelete.image_url || storeToDelete.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} width={56} height={56} decoding="async" className="w-14 h-14 rounded-xl object-cover border-2 border-red-200" style={{willChange: 'opacity, transform'}} />
+                              <img src={storeToDelete.image_url || storeToDelete.image || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect fill='%23e2e8f0' width='100' height='100'/%3E%3C/svg%3E"} width={56} height={56} decoding="async" className="w-14 h-14 rounded-xl object-cover border-2 border-red-200" style={{ willChange: 'opacity, transform' }} />
                               <div>
                                  <h4 className="font-black text-lg text-slate-800">{storeToDelete.name}</h4>
                                  <p className="text-xs text-slate-500 uppercase tracking-wider">{storeToDelete.category_id}</p>
@@ -4609,12 +4638,12 @@ ${itemsText}
                                     <div className="space-y-4">
                                        {(() => {
                                           // Remove duplicate prefix if it exists
-                                          const cleanedInvoiceData = invoiceData.startsWith('data:') 
-                                             ? invoiceData 
+                                          const cleanedInvoiceData = invoiceData.startsWith('data:')
+                                             ? invoiceData
                                              : `data:image/jpeg;base64,${invoiceData}`;
                                           return (
                                              <>
-                                                <img 
+                                                <img
                                                    src={cleanedInvoiceData}
                                                    alt="Facture Magasin"
                                                    className="w-full rounded-2xl border border-slate-200 shadow-sm object-cover"
@@ -5162,7 +5191,7 @@ ${itemsText}
                                           if (file) {
                                              const totalImages = productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0);
                                              if (totalImages >= 4) return;
-                                             
+
                                              const reader = new FileReader();
                                              reader.onloadend = () => {
                                                 if (typeof reader.result === 'string') {
@@ -5307,10 +5336,7 @@ ${itemsText}
                               <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Tps Livraison [min]</label>
                               <input name="delivery_time_min" type="number" defaultValue={editingStore?.delivery_time_min || 25} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" />
                            </div>
-                           <div className="space-y-1">
-                              <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Frais Livraison [DH]</label>
-                              <input name="delivery_fee" type="number" defaultValue={editingStore?.delivery_fee || 15} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all" />
-                           </div>
+
                         </div>
                         <div className="grid grid-cols-3 gap-4 bg-slate-50 p-6 rounded-[2rem] border border-slate-100">
                            <div className="flex flex-col items-center gap-3">
@@ -5439,8 +5465,8 @@ ${itemsText}
                            )}
                         </div>
                         <button type="submit" disabled={isSavingStore} className={`w-full py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl ${isSavingStore ? 'bg-slate-700 cursor-wait opacity-80 text-slate-200' : 'bg-slate-900 text-white'}`}>
-                                    {isSavingStore ? 'Enregistrement...' : 'Enregistrer la Marque'}
-                                 </button>
+                           {isSavingStore ? 'Enregistrement...' : 'Enregistrer la Marque'}
+                        </button>
                      </form>
                   </div>
                </div>

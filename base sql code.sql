@@ -153,6 +153,15 @@ CREATE TABLE public.orders (
   CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
   CONSTRAINT orders_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
 );
+CREATE TABLE public.otp_codes (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  email text NOT NULL,
+  code text NOT NULL,
+  purpose text NOT NULL CHECK (purpose = ANY (ARRAY['email_verify'::text, 'password_reset'::text])),
+  expires_at timestamp with time zone NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT otp_codes_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.products (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   store_id uuid NOT NULL,
