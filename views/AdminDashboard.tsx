@@ -12,7 +12,7 @@ import {
    Plus, Smartphone, MessageCircle, Camera, Link as LinkIcon, Copy, Map as MapIcon,
    Star, AlertTriangle, User, Calendar, CreditCard, Phone, Edit3, Image as ImageIcon, Bike,
    Save, Megaphone, Upload, Navigation, Trash, Info, UserCheck, UserMinus, ShieldCheck, RotateCw, LogOut, Share2, Clipboard, Scissors, Copy as CopyIcon, Quote, MessageSquare, Box, History as HistoryIcon,
-   DollarSign, BarChart3, TrendingUp, PieChart as PieChartIcon, Receipt, AlertCircle, FileText, Download, ZoomIn, ZoomOut, Mail, Target, ListTree, Globe, Shield, Loader2
+   DollarSign, BarChart3, TrendingUp, PieChart as PieChartIcon, Receipt, AlertCircle, FileText, Download, ZoomIn, ZoomOut, Mail, Target, ListTree, Globe, Shield, Loader2, LocateOff
 } from 'lucide-react';
 import { CATEGORIES, MOCK_STORES } from '../constants';
 import { supabase, dataUrlToBlob } from '../lib/supabase';
@@ -344,6 +344,26 @@ const LogisticsSidebar: React.FC<{
                                  </div>
                               </div>
 
+                              {/* CHAMP DE SAISIE RAPIDE (MANUEL) */}
+                              <div className="space-y-1 pt-1">
+                                 <label className="text-[9px] font-black text-slate-400 uppercase">Saisie Rapide (X, Y)</label>
+                                 <input
+                                    type="text"
+                                    placeholder="Coller ici: 34.25, -6.62"
+                                    className="w-full bg-white border border-orange-100 rounded-lg px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:ring-2 ring-orange-100"
+                                    onChange={(e) => {
+                                       const val = e.target.value;
+                                       const match = val.match(/(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)/);
+                                       if (match) {
+                                          const lat = parseFloat(match[1]);
+                                          const lng = parseFloat(match[2]);
+                                          if (!isNaN(lat) && !isNaN(lng)) onPosChange(lat, lng);
+                                       }
+                                    }}
+                                 />
+                                 <p className="text-[8px] text-slate-400 font-bold uppercase italic mt-1">Extrait Auto X & Y</p>
+                              </div>
+
                               {!pickingPos ? (
                                  <p className="text-[10px] text-slate-500 italic">Cliquez sur la carte ou saisissez les coordonnées...</p>
                               ) : (
@@ -518,10 +538,11 @@ const MapComponent: React.FC<{
    stores: Store[],
    categories: any[],
    selectedOrderId?: string | null,
+   onUnlinkStore?: (id: string) => void,
    onMapClick?: (lat: number, lng: number) => void,
    pickingPos?: [number, number] | null,
    pickingStore?: Store | null
-}> = ({ drivers, orders, users, stores, categories, selectedOrderId, onMapClick, pickingPos, pickingStore }) => {
+}> = ({ drivers, orders, users, stores, categories, selectedOrderId, onUnlinkStore: onUnlinkStore, onMapClick, pickingPos, pickingStore }) => {
    const selectedOrder = orders.find(o => o.id === selectedOrderId);
 
    // Détermination des entités actives pour les tracés
@@ -667,6 +688,21 @@ const MapComponent: React.FC<{
                               </div>
                            </div>
                            <p className="text-[10px] text-slate-500 font-bold bg-slate-50 p-1.5 rounded-lg border border-slate-100">Cat: {store.category_id || store.category}</p>
+
+                           {/* BOUTON DÉLIAISON (Anciennement Suppression) */}
+                           {onUnlinkStore && (
+                              <button
+                                 onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (window.confirm(`Retirer le magasin "${store.name}" de la carte ? Ses informations resteront dans le catalogue.`)) {
+                                       onUnlinkStore(store.id);
+                                    }
+                                 }}
+                                 className="w-full mt-3 flex items-center justify-center gap-2 py-2 bg-orange-50 text-orange-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 hover:text-white transition-all border border-orange-100"
+                              >
+                                 <LocateOff size={12} /> Délier de la Carte
+                              </button>
+                           )}
                         </div>
                      </Popup>
                   </Marker>
@@ -1216,6 +1252,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if (!s) return;
       handleDeleteStore(s);
    }, [stores, handleDeleteStore]);
+
+   const handleUnlinkStore = useCallback(async (id: string) => {
+      const { error } = await supabase
+         .from('stores')
+         .update({
+            latitude: null,
+            longitude: null,
+            maps_url: null
+         })
+         .eq('id', id);
+
+      if (error) {
+         alert("Erreur lors de la déliaison : " + error.message);
+      } else {
+         // Mise à jour locale immédiate
+         setStores(prev => prev.map(s => s.id === id ? { ...s, latitude: null, longitude: null, maps_url: null } : s));
+      }
+   }, [supabase]);
    const [supportNumber, setSupportNumber] = useState('+212 600 000 000');
    const [ribs, setRibs] = useState<RIB[]>([]);
    const [supportInfo, setSupportInfo] = useState<SupportInfo>({ phone: '', email: '' });
@@ -1563,8 +1617,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const pattern3 = /[?&]ll=(-?\d+\.?\d*),(-?\d+\.?\d+)/;
       // Pattern 4: !3d (latitude) !4d (longitude) - format alternatif
       const pattern4 = /!3d(-?\d+\.?\d*)!4d(-?\d+\.?\d+)/;
+      // Pattern 5: Raw coordinates "lat, lng"
+      const pattern5 = /^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/;
 
-      let match = url.match(pattern1) || url.match(pattern2) || url.match(pattern3) || url.match(pattern4);
+      let match = url.trim().match(pattern1) || url.trim().match(pattern2) || url.trim().match(pattern3) || url.trim().match(pattern4) || url.trim().match(pattern5);
 
       if (match) {
          const lat = parseFloat(match[1]);
@@ -1869,7 +1925,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                id: "LIV-" + Math.floor(1000 + Math.random() * 9000),
             };
             const { error } = await supabase.from('drivers').insert([newDriver]);
-            if (error) alert("Erreur: " + error.message);
+            if (error) alert("Erreur: " + error.error_description || error.message);
             else {
                setShowAddDriver(false);
                setDriverProfileImage(null);
@@ -3630,6 +3686,7 @@ ${itemsText}
                            stores={stores}
                            categories={dbCategories}
                            selectedOrderId={selectedOrderId}
+                           onUnlinkStore={handleUnlinkStore}
                            onMapClick={(lat, lng) => pickingStore && setPickingPos([lat, lng])}
                            pickingPos={pickingPos}
                            pickingStore={pickingStore}
@@ -4362,7 +4419,7 @@ ${itemsText}
          {/* MODAL CONFIRMATION SUPPRESSION MARQUE */}
          {
             showDeleteStoreModal && storeToDelete && (
-               <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+               <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6">
                   <div className="absolute inset-0 bg-slate-900/80 transition-opacity duration-150" onClick={() => setShowDeleteStoreModal(false)}></div>
                   <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-lg overflow-hidden transition-transform transition-opacity duration-200 ease-out transform-gpu" style={{ willChange: 'transform, opacity' }}>
                      <header className="p-8 border-b flex justify-between items-center bg-red-50">
@@ -5407,20 +5464,19 @@ ${itemsText}
                               </div>
                            </div>
                         )}
-
                         <div className="space-y-1">
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Description de la Marque</label>
                            <textarea name="description" defaultValue={editingStore?.description} rows={2} className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all resize-none" placeholder="Une brève description de cette marque..." />
                         </div>
                         <div className="space-y-1">
-                           <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Google Maps URL</label>
+                           <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Localisation (URL ou Coordonnées X, Y)</label>
                            <div className="flex gap-2">
                               <input
                                  name="maps_url"
                                  value={mapsUrlInput}
                                  onChange={(e) => setMapsUrlInput(e.target.value)}
                                  className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all"
-                                 placeholder="https://maps.google.com/..."
+                                 placeholder="Coller URL ou 34.24, -6.57"
                               />
                               <button
                                  type="button"
@@ -5469,7 +5525,7 @@ ${itemsText}
                         </button>
                      </form>
                   </div>
-               </div>
+               </div >
             )
          }
 
@@ -5537,252 +5593,258 @@ ${itemsText}
          }
 
          {/* MODAL UTILISATEUR */}
-         {selectedUser && (
-            <div key={`user_${selectedUser.id}`} className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-               <div className="absolute inset-0 bg-slate-900/60" onClick={() => setSelectedUser(null)}></div>
-               <div className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-                  <header className="p-8 border-b flex justify-between items-center bg-slate-50">
-                     <h3 className="text-xl font-black uppercase tracking-tighter">Profil Utilisateur</h3>
-                     <button onClick={() => setSelectedUser(null)} className="p-3 bg-white shadow-sm border rounded-full hover:bg-slate-100 transition-colors"><X size={20} /></button>
-                  </header>
-                  <div className="p-10 space-y-8">
-                     <div className="flex flex-col items-center gap-4">
-                        <div className="w-24 h-24 bg-orange-100 text-orange-600 rounded-[2rem] flex items-center justify-center text-4xl font-black shadow-inner border-4 border-white">
-                           {selectedUser.fullName[0]}
+         {
+            selectedUser && (
+               <div key={`user_${selectedUser.id}`} className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => setSelectedUser(null)}></div>
+                  <div className="relative w-full max-w-lg bg-white rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                     <header className="p-8 border-b flex justify-between items-center bg-slate-50">
+                        <h3 className="text-xl font-black uppercase tracking-tighter">Profil Utilisateur</h3>
+                        <button onClick={() => setSelectedUser(null)} className="p-3 bg-white shadow-sm border rounded-full hover:bg-slate-100 transition-colors"><X size={20} /></button>
+                     </header>
+                     <div className="p-10 space-y-8">
+                        <div className="flex flex-col items-center gap-4">
+                           <div className="w-24 h-24 bg-orange-100 text-orange-600 rounded-[2rem] flex items-center justify-center text-4xl font-black shadow-inner border-4 border-white">
+                              {selectedUser.fullName[0]}
+                           </div>
+                           <div className="text-center">
+                              <h4 className="text-2xl font-black text-slate-800 tracking-tight">{selectedUser.fullName}</h4>
+                              <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${selectedUser.isAdmin ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                                 {selectedUser.isAdmin ? 'Administrateur' : 'Client standard'}
+                              </span>
+                           </div>
                         </div>
-                        <div className="text-center">
-                           <h4 className="text-2xl font-black text-slate-800 tracking-tight">{selectedUser.fullName}</h4>
-                           <span className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest ${selectedUser.isAdmin ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
-                              {selectedUser.isAdmin ? 'Administrateur' : 'Client standard'}
-                           </span>
-                        </div>
-                     </div>
 
-                     <div className="grid grid-cols-1 gap-4">
-                        <div className="bg-slate-50 p-6 rounded-3xl space-y-1">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Phone size={12} /> Téléphone</p>
-                           <p className="font-bold text-slate-700">{selectedUser.phone || 'Non renseigné'}</p>
+                        <div className="grid grid-cols-1 gap-4">
+                           <div className="bg-slate-50 p-6 rounded-3xl space-y-1">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Phone size={12} /> Téléphone</p>
+                              <p className="font-bold text-slate-700">{selectedUser.phone || 'Non renseigné'}</p>
+                           </div>
+                           <div className="bg-slate-50 p-6 rounded-3xl space-y-1 text-wrap overflow-hidden">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mail size={12} /> Email</p>
+                              <p className="font-bold text-slate-700">{selectedUser.email || 'Non renseigné'}</p>
+                           </div>
+                           <div className="bg-slate-50 p-6 rounded-3xl space-y-1">
+                              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FileText size={12} /> ID Utilisateur</p>
+                              <p className="font-bold text-slate-700 break-all text-xs">{selectedUser.id}</p>
+                           </div>
                         </div>
-                        <div className="bg-slate-50 p-6 rounded-3xl space-y-1 text-wrap overflow-hidden">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><Mail size={12} /> Email</p>
-                           <p className="font-bold text-slate-700">{selectedUser.email || 'Non renseigné'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-6 rounded-3xl space-y-1">
-                           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2"><FileText size={12} /> ID Utilisateur</p>
-                           <p className="font-bold text-slate-700 break-all text-xs">{selectedUser.id}</p>
-                        </div>
-                     </div>
 
-                     <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-purple-50 border border-purple-100 p-6 rounded-3xl space-y-2">
-                           <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-2"><Globe size={12} /> Langue</p>
-                           <p className="text-2xl font-black text-purple-700">{selectedUser.language ? selectedUser.language.toUpperCase() : 'FR'}</p>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="bg-purple-50 border border-purple-100 p-6 rounded-3xl space-y-2">
+                              <p className="text-[10px] font-black text-purple-600 uppercase tracking-widest flex items-center gap-2"><Globe size={12} /> Langue</p>
+                              <p className="text-2xl font-black text-purple-700">{selectedUser.language ? selectedUser.language.toUpperCase() : 'FR'}</p>
+                           </div>
+                           <div className={`border p-6 rounded-3xl space-y-2 ${selectedUser.isBlocked ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
+                              <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${selectedUser.isBlocked ? 'text-red-600' : 'text-emerald-600'}`}><Shield size={12} /> Statut</p>
+                              <p className={`font-black ${selectedUser.isBlocked ? 'text-red-700' : 'text-emerald-700'}`}>{selectedUser.isBlocked ? 'BLOQUÉ' : 'ACTIF'}</p>
+                           </div>
                         </div>
-                        <div className={`border p-6 rounded-3xl space-y-2 ${selectedUser.isBlocked ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                           <p className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${selectedUser.isBlocked ? 'text-red-600' : 'text-emerald-600'}`}><Shield size={12} /> Statut</p>
-                           <p className={`font-black ${selectedUser.isBlocked ? 'text-red-700' : 'text-emerald-700'}`}>{selectedUser.isBlocked ? 'BLOQUÉ' : 'ACTIF'}</p>
-                        </div>
-                     </div>
 
-                     <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-3xl space-y-2">
-                           <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2"><Package size={12} /> Commandes Livrées</p>
-                           <p className="text-3xl font-black text-emerald-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'delivered').length}</p>
+                        <div className="grid grid-cols-2 gap-4">
+                           <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-3xl space-y-2">
+                              <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest flex items-center gap-2"><Package size={12} /> Commandes Livrées</p>
+                              <p className="text-3xl font-black text-emerald-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'delivered').length}</p>
+                           </div>
+                           <div className="bg-blue-50 border border-blue-100 p-6 rounded-3xl space-y-2">
+                              <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2"><DollarSign size={12} /> Total Dépensé</p>
+                              <p className="text-3xl font-black text-blue-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'delivered').reduce((sum, o) => sum + o.total, 0)} DH</p>
+                           </div>
                         </div>
-                        <div className="bg-blue-50 border border-blue-100 p-6 rounded-3xl space-y-2">
-                           <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest flex items-center gap-2"><DollarSign size={12} /> Total Dépensé</p>
-                           <p className="text-3xl font-black text-blue-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'delivered').reduce((sum, o) => sum + o.total, 0)} DH</p>
-                        </div>
-                     </div>
 
-                     <div className="grid grid-cols-3 gap-3">
-                        <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl space-y-2 text-center">
-                           <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">En attente</p>
-                           <p className="text-2xl font-black text-amber-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'pending').length}</p>
+                        <div className="grid grid-cols-3 gap-3">
+                           <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl space-y-2 text-center">
+                              <p className="text-[9px] font-black text-amber-600 uppercase tracking-widest">En attente</p>
+                              <p className="text-2xl font-black text-amber-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'pending').length}</p>
+                           </div>
+                           <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-2xl space-y-2 text-center">
+                              <p className="text-[9px] font-black text-yellow-600 uppercase tracking-widest">En cours</p>
+                              <p className="text-2xl font-black text-yellow-700">{propOrders.filter(o => o.phone === selectedUser.phone && (o.status === 'treatment' || o.status === 'delivering' || o.status === 'progression')).length}</p>
+                           </div>
+                           <div className="bg-red-50 border border-red-100 p-4 rounded-2xl space-y-2 text-center">
+                              <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Refusées</p>
+                              <p className="text-2xl font-black text-red-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'refused').length}</p>
+                           </div>
                         </div>
-                        <div className="bg-yellow-50 border border-yellow-100 p-4 rounded-2xl space-y-2 text-center">
-                           <p className="text-[9px] font-black text-yellow-600 uppercase tracking-widest">En cours</p>
-                           <p className="text-2xl font-black text-yellow-700">{propOrders.filter(o => o.phone === selectedUser.phone && (o.status === 'treatment' || o.status === 'delivering' || o.status === 'progression')).length}</p>
-                        </div>
-                        <div className="bg-red-50 border border-red-100 p-4 rounded-2xl space-y-2 text-center">
-                           <p className="text-[9px] font-black text-red-600 uppercase tracking-widest">Refusées</p>
-                           <p className="text-2xl font-black text-red-700">{propOrders.filter(o => o.phone === selectedUser.phone && o.status === 'refused').length}</p>
-                        </div>
-                     </div>
 
-                     <div className="bg-orange-50 border border-orange-100 p-8 rounded-[2.5rem] flex flex-col items-center gap-4 text-center">
-                        <div className="w-12 h-12 bg-orange-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
-                           <MapPin size={24} />
+                        <div className="bg-orange-50 border border-orange-100 p-8 rounded-[2.5rem] flex flex-col items-center gap-4 text-center">
+                           <div className="w-12 h-12 bg-orange-500 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-orange-500/20">
+                              <MapPin size={24} />
+                           </div>
+                           <div className="space-y-1">
+                              <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Localisation en temps réel</p>
+                              {selectedUser.lastLat && selectedUser.lastLng ? (
+                                 <a
+                                    href={`https://www.google.com/maps/search/?api=1&query=${selectedUser.lastLat},${selectedUser.lastLng}`}
+                                    target="_blank"
+                                    className="inline-flex items-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
+                                 >
+                                    Voir sur Google Maps <ExternalLink size={14} />
+                                 </a>
+                              ) : (
+                                 <p className="text-slate-500 font-bold text-sm italic">Aucune donnée de position disponible</p>
+                              )}
+                           </div>
                         </div>
-                        <div className="space-y-1">
-                           <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest">Localisation en temps réel</p>
-                           {selectedUser.lastLat && selectedUser.lastLng ? (
-                              <a
-                                 href={`https://www.google.com/maps/search/?api=1&query=${selectedUser.lastLat},${selectedUser.lastLng}`}
-                                 target="_blank"
-                                 className="inline-flex items-center gap-2 bg-white text-slate-900 px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
-                              >
-                                 Voir sur Google Maps <ExternalLink size={14} />
-                              </a>
+
+                        <button
+                           onClick={() => handleToggleUserBlock(selectedUser.phone, !!selectedUser.isBlocked)}
+                           className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest transition-all active:scale-95 shadow-lg ${selectedUser.isBlocked ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-red-500 text-white shadow-red-500/20'}`}
+                        >
+                           {selectedUser.isBlocked ? 'Débloquer l\'utilisateur' : 'Bloquer l\'utilisateur'}
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            )
+         }
+
+         {/* MODAL ANNONCE */}
+         {
+            showAddAnnouncement && (
+               <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddAnnouncement(false)}></div>
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                     <header className="p-8 border-b flex justify-between items-center bg-slate-50">
+                        <h3 className="text-xl font-black uppercase">{editingAnnouncement ? 'Modifier' : 'Nouvelle'} Annonce</h3>
+                        <button onClick={() => setShowAddAnnouncement(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20} /></button>
+                     </header>
+                     <form onSubmit={handleCreateAnnouncement} className="p-8 space-y-6">
+                        <div className="space-y-4">
+                           <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre de l'annonce</label>
+                              <input
+                                 name="title"
+                                 required
+                                 defaultValue={editingAnnouncement?.title}
+                                 placeholder="Faites passer votre message..."
+                                 className="w-full bg-slate-50 border-2 border-transparent focus:border-orange-500 outline-none rounded-2xl p-4 font-bold transition-all"
+                              />
+                           </div>
+
+                           <div className="space-y-1">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description / Contenu</label>
+                              <textarea
+                                 name="content"
+                                 required
+                                 rows={4}
+                                 defaultValue={editingAnnouncement?.content}
+                                 placeholder="Détails de l'annonce ou promotion..."
+                                 className="w-full bg-slate-50 border-2 border-transparent focus:border-orange-500 outline-none rounded-2xl p-4 font-bold transition-all resize-none"
+                              />
+                           </div>
+
+                           <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Image de l'annonce</label>
+                              <div className="flex flex-col gap-4">
+                                 <div className="w-full h-48 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 overflow-hidden relative group">
+                                    {announcementImagePreview ? (
+                                       <>
+                                          <img src={announcementImagePreview} className="w-full h-full object-cover" />
+                                          <button
+                                             type="button"
+                                             onClick={() => setAnnouncementImagePreview(null)}
+                                             className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
+                                          >
+                                             <Trash2 size={16} />
+                                          </button>
+                                       </>
+                                    ) : (
+                                       <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 gap-2">
+                                          <ImageIcon size={48} />
+                                          <p className="text-[10px] font-black uppercase">Recommandé: 1080x1080px</p>
+                                       </div>
+                                    )}
+                                 </div>
+                                 <label className="cursor-pointer bg-slate-900 text-white p-4 rounded-[1.5rem] text-center font-black uppercase text-[10px] tracking-widest hover:bg-orange-600 transition-colors">
+                                    <input
+                                       type="file"
+                                       className="hidden"
+                                       accept="image/*"
+                                       onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                             const reader = new FileReader();
+                                             reader.onloadend = () => setAnnouncementImagePreview(reader.result as string);
+                                             reader.readAsDataURL(file);
+                                          }
+                                       }}
+                                    />
+                                    Choisir une image
+                                 </label>
+                              </div>
+                           </div>
+                        </div>
+
+                        <div className="pt-4">
+                           <button
+                              type="submit"
+                              className="w-full bg-orange-600 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl shadow-orange-200 hover:scale-[1.02] active:scale-95 transition-all"
+                           >
+                              {editingAnnouncement ? 'Mettre à jour' : 'Publier maintenant'}
+                           </button>
+                        </div>
+                     </form>
+                  </div>
+               </div>
+            )
+         }
+
+         {/* MODAL MANAGE SUB-CATEGORIES */}
+         {
+            showAddSubCategory && editingCategory && (
+               <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+                  <div className="absolute inset-0 bg-slate-900/60" onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }}></div>
+                  <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                     <header className="p-8 border-b flex justify-between items-center bg-indigo-50">
+                        <div>
+                           <h3 className="text-xl font-black uppercase text-indigo-900">Sous-Catégories</h3>
+                           <p className="text-[10px] text-indigo-600 font-bold uppercase mt-1">Catégorie : {editingCategory.name_fr}</p>
+                        </div>
+                        <button onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition-colors"><X size={20} /></button>
+                     </header>
+
+                     <div className="p-8 space-y-6">
+                        {/* Add New Sub-Category Form */}
+                        <form onSubmit={handleCreateSubCategory} className="flex gap-2">
+                           <input type="hidden" name="category_id" value={editingCategory.id} />
+                           <input
+                              name="name"
+                              placeholder="Nouvelle sous-catégorie..."
+                              required
+                              className="flex-1 bg-slate-50 border-2 border-transparent focus:border-indigo-500 outline-none rounded-2xl p-4 font-bold transition-all"
+                           />
+                           <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 active:scale-95">
+                              <Plus size={24} />
+                           </button>
+                        </form>
+
+                        {/* List of Sub-Categories */}
+                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                           <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sous-catégories existantes</h4>
+                           {propSubCategories.filter(sc => sc.category_id === editingCategory.id).length === 0 ? (
+                              <div className="text-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                                 <p className="text-xs font-bold text-slate-400 italic">Aucune sous-catégorie pour le moment</p>
+                              </div>
                            ) : (
-                              <p className="text-slate-500 font-bold text-sm italic">Aucune donnée de position disponible</p>
+                              propSubCategories.filter(sc => sc.category_id === editingCategory.id).map(sc => (
+                                 <div key={sc.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-indigo-100 hover:bg-white transition-all">
+                                    <span className="font-bold text-slate-700">{sc.name}</span>
+                                    <button
+                                       onClick={() => handleDeleteSubCategory(sc.id)}
+                                       className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                    >
+                                       <Trash2 size={16} />
+                                    </button>
+                                 </div>
+                              ))
                            )}
                         </div>
                      </div>
-
-                     <button
-                        onClick={() => handleToggleUserBlock(selectedUser.phone, !!selectedUser.isBlocked)}
-                        className={`w-full py-5 rounded-[2rem] font-black uppercase text-xs tracking-widest transition-all active:scale-95 shadow-lg ${selectedUser.isBlocked ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-red-500 text-white shadow-red-500/20'}`}
-                     >
-                        {selectedUser.isBlocked ? 'Débloquer l\'utilisateur' : 'Bloquer l\'utilisateur'}
-                     </button>
                   </div>
                </div>
-            </div>
-         )}
-
-         {/* MODAL ANNONCE */}
-         {showAddAnnouncement && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-               <div className="absolute inset-0 bg-slate-900/60" onClick={() => setShowAddAnnouncement(false)}></div>
-               <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-                  <header className="p-8 border-b flex justify-between items-center bg-slate-50">
-                     <h3 className="text-xl font-black uppercase">{editingAnnouncement ? 'Modifier' : 'Nouvelle'} Annonce</h3>
-                     <button onClick={() => setShowAddAnnouncement(false)} className="p-2 bg-white rounded-full shadow-sm"><X size={20} /></button>
-                  </header>
-                  <form onSubmit={handleCreateAnnouncement} className="p-8 space-y-6">
-                     <div className="space-y-4">
-                        <div className="space-y-1">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Titre de l'annonce</label>
-                           <input
-                              name="title"
-                              required
-                              defaultValue={editingAnnouncement?.title}
-                              placeholder="Faites passer votre message..."
-                              className="w-full bg-slate-50 border-2 border-transparent focus:border-orange-500 outline-none rounded-2xl p-4 font-bold transition-all"
-                           />
-                        </div>
-
-                        <div className="space-y-1">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Description / Contenu</label>
-                           <textarea
-                              name="content"
-                              required
-                              rows={4}
-                              defaultValue={editingAnnouncement?.content}
-                              placeholder="Détails de l'annonce ou promotion..."
-                              className="w-full bg-slate-50 border-2 border-transparent focus:border-orange-500 outline-none rounded-2xl p-4 font-bold transition-all resize-none"
-                           />
-                        </div>
-
-                        <div className="space-y-2">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Image de l'annonce</label>
-                           <div className="flex flex-col gap-4">
-                              <div className="w-full h-48 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 overflow-hidden relative group">
-                                 {announcementImagePreview ? (
-                                    <>
-                                       <img src={announcementImagePreview} className="w-full h-full object-cover" />
-                                       <button
-                                          type="button"
-                                          onClick={() => setAnnouncementImagePreview(null)}
-                                          className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity"
-                                       >
-                                          <Trash2 size={16} />
-                                       </button>
-                                    </>
-                                 ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 gap-2">
-                                       <ImageIcon size={48} />
-                                       <p className="text-[10px] font-black uppercase">Recommandé: 1080x1080px</p>
-                                    </div>
-                                 )}
-                              </div>
-                              <label className="cursor-pointer bg-slate-900 text-white p-4 rounded-[1.5rem] text-center font-black uppercase text-[10px] tracking-widest hover:bg-orange-600 transition-colors">
-                                 <input
-                                    type="file"
-                                    className="hidden"
-                                    accept="image/*"
-                                    onChange={async (e) => {
-                                       const file = e.target.files?.[0];
-                                       if (file) {
-                                          const reader = new FileReader();
-                                          reader.onloadend = () => setAnnouncementImagePreview(reader.result as string);
-                                          reader.readAsDataURL(file);
-                                       }
-                                    }}
-                                 />
-                                 Choisir une image
-                              </label>
-                           </div>
-                        </div>
-                     </div>
-
-                     <div className="pt-4">
-                        <button
-                           type="submit"
-                           className="w-full bg-orange-600 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl shadow-orange-200 hover:scale-[1.02] active:scale-95 transition-all"
-                        >
-                           {editingAnnouncement ? 'Mettre à jour' : 'Publier maintenant'}
-                        </button>
-                     </div>
-                  </form>
-               </div>
-            </div>
-         )}
-
-         {/* MODAL MANAGE SUB-CATEGORIES */}
-         {showAddSubCategory && editingCategory && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
-               <div className="absolute inset-0 bg-slate-900/60" onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }}></div>
-               <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
-                  <header className="p-8 border-b flex justify-between items-center bg-indigo-50">
-                     <div>
-                        <h3 className="text-xl font-black uppercase text-indigo-900">Sous-Catégories</h3>
-                        <p className="text-[10px] text-indigo-600 font-bold uppercase mt-1">Catégorie : {editingCategory.name_fr}</p>
-                     </div>
-                     <button onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }} className="p-2 bg-white rounded-full shadow-sm hover:bg-slate-50 transition-colors"><X size={20} /></button>
-                  </header>
-
-                  <div className="p-8 space-y-6">
-                     {/* Add New Sub-Category Form */}
-                     <form onSubmit={handleCreateSubCategory} className="flex gap-2">
-                        <input type="hidden" name="category_id" value={editingCategory.id} />
-                        <input
-                           name="name"
-                           placeholder="Nouvelle sous-catégorie..."
-                           required
-                           className="flex-1 bg-slate-50 border-2 border-transparent focus:border-indigo-500 outline-none rounded-2xl p-4 font-bold transition-all"
-                        />
-                        <button type="submit" className="bg-indigo-600 text-white p-4 rounded-2xl hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-100 active:scale-95">
-                           <Plus size={24} />
-                        </button>
-                     </form>
-
-                     {/* List of Sub-Categories */}
-                     <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sous-catégories existantes</h4>
-                        {propSubCategories.filter(sc => sc.category_id === editingCategory.id).length === 0 ? (
-                           <div className="text-center py-12 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
-                              <p className="text-xs font-bold text-slate-400 italic">Aucune sous-catégorie pour le moment</p>
-                           </div>
-                        ) : (
-                           propSubCategories.filter(sc => sc.category_id === editingCategory.id).map(sc => (
-                              <div key={sc.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 group hover:border-indigo-100 hover:bg-white transition-all">
-                                 <span className="font-bold text-slate-700">{sc.name}</span>
-                                 <button
-                                    onClick={() => handleDeleteSubCategory(sc.id)}
-                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                                 >
-                                    <Trash2 size={16} />
-                                 </button>
-                              </div>
-                           ))
-                        )}
-                     </div>
-                  </div>
-               </div>
-            </div>
-         )}
+            )
+         }
 
          {/* LIGHTBOX IMAGE WITH ZOOM */}
          {
@@ -5790,14 +5852,16 @@ ${itemsText}
          }
 
          {/* ADMIN PROFILE MODAL */}
-         {showProfileModal && (
-            <AdminProfileModal
-               admin={currentAdmin}
-               onClose={() => setShowProfileModal(false)}
-               onLogout={onLogout}
-            />
-         )}
-      </div>
+         {
+            showProfileModal && (
+               <AdminProfileModal
+                  admin={currentAdmin}
+                  onClose={() => setShowProfileModal(false)}
+                  onLogout={onLogout}
+               />
+            )
+         }
+      </div >
    );
 };
 
@@ -5825,7 +5889,7 @@ const StatCard: React.FC<{ label: string; value: string | number; icon: React.Re
 );
 
 const AdminProfileModal: React.FC<{ admin: any; onClose: () => void; onLogout: () => void }> = ({ admin, onClose, onLogout }) => (
-   <div className="fixed inset-0 z-[150] flex items-center justify-center p-6">
+   <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6">
       <div className="absolute inset-0 bg-slate-900/60" onClick={onClose}></div>
       <div className="relative bg-white w-full max-w-md rounded-[3.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
          <header className="p-10 border-b flex justify-between items-center bg-orange-50">
@@ -5921,7 +5985,7 @@ const ImageLightbox: React.FC<{ imageUrl: string; onClose: () => void }> = ({ im
 
    return (
       <div
-         className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+         className="fixed inset-0 z-[9999] bg-black/95 flex items-center justify-center"
          onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
          }}
