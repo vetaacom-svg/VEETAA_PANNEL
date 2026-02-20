@@ -1115,6 +1115,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
    const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all');
    const [dateFilter, setDateFilter] = useState('');
    const [storeFilter, setStoreFilter] = useState('all');
+   const [storeOptionsFilter, setStoreOptionsFilter] = useState<{ is_featured?: boolean; is_new?: boolean; has_products?: boolean }>({});
    const [currentPage, setCurrentPage] = useState(1);
    const [itemsPerPage] = useState(15);
    const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1817,6 +1818,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             store_id: formData.get('store_id') as string,
             image_url: productImageURL,
             description: formData.get('description') as string,
+            sub_category: formData.get('sub_category') as string,
             price_editable: formData.get('price_editable') === 'on',
             product_images: additionalImageURLs,
             user_visible_fields: visibleFields,
@@ -2565,10 +2567,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return days * 24 * 60 * 60 * 1000;
    }, [balanceRange]);
 
-   const filteredStores = useMemo(() => stores.filter(s =>
-      (s.name || '').toLowerCase().includes(lowerSearch) ||
-      (s.category_id || '').toLowerCase().includes(lowerSearch)
-   ), [stores, lowerSearch]);
+   const filteredStores = useMemo(() => stores.filter(s => {
+      const matchesSearch = (s.name || '').toLowerCase().includes(lowerSearch) ||
+         (s.category_id || '').toLowerCase().includes(lowerSearch);
+
+      const matchesOptions = (!storeOptionsFilter.is_featured || s.is_featured) &&
+         (!storeOptionsFilter.is_new || s.is_new) &&
+         (!storeOptionsFilter.has_products || s.has_products);
+
+      return matchesSearch && matchesOptions;
+   }), [stores, lowerSearch, storeOptionsFilter]);
 
    const filteredProducts = useMemo(() => localProducts.filter(p =>
       (p.name || '').toLowerCase().includes(lowerSearch) ||
@@ -3890,11 +3898,40 @@ ${itemsText}
                {/* PARTNERS (STORES) */}
                {activeTab === 'PARTNERS' && (
                   <div className="space-y-6">
-                     <div className="flex justify-between items-center">
+                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                         <h3 className="text-xl font-black uppercase">Partenaires & Marques</h3>
-                        <button onClick={() => { setEditingStore(null); setStoreImagePreview(null); setShowAddPartner(true); }} className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600">
-                           <Plus size={16} /> Nouveau Partenaire
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                           <button
+                              onClick={() => setStoreOptionsFilter(prev => ({ ...prev, is_featured: !prev.is_featured }))}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${storeOptionsFilter.is_featured ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                           >
+                              Principales
+                           </button>
+                           <button
+                              onClick={() => setStoreOptionsFilter(prev => ({ ...prev, is_new: !prev.is_new }))}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${storeOptionsFilter.is_new ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                           >
+                              Nouveaux
+                           </button>
+                           <button
+                              onClick={() => setStoreOptionsFilter(prev => ({ ...prev, has_products: !prev.has_products }))}
+                              className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${storeOptionsFilter.has_products ? 'bg-orange-500 text-white shadow-lg shadow-orange-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                           >
+                              Avec Catalogue
+                           </button>
+                           {Object.values(storeOptionsFilter).some(v => v) && (
+                              <button
+                                 onClick={() => setStoreOptionsFilter({})}
+                                 className="ml-2 text-[10px] font-black uppercase text-slate-400 hover:text-red-500 transition-colors"
+                              >
+                                 Effacer
+                              </button>
+                           )}
+                           <div className="w-px h-6 bg-slate-200 mx-2 hidden md:block"></div>
+                           <button onClick={() => { setEditingStore(null); setStoreImagePreview(null); setShowAddPartner(true); }} className="bg-slate-900 text-white px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-600 transition-all active:scale-95 shadow-lg">
+                              <Plus size={16} /> Nouveau Partenaire
+                           </button>
+                        </div>
                      </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {memoizedStoreCards}
@@ -5164,6 +5201,25 @@ ${itemsText}
                            </div>
                         </div>
 
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Sous-Catégorie</label>
+                           <select
+                              name="sub_category"
+                              value={editingProduct?.sub_category || ''}
+                              onChange={(e) => setEditingProduct(prev => prev ? { ...prev, sub_category: e.target.value } : null)}
+                              className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer"
+                           >
+                              <option value="">Aucune</option>
+                              {propSubCategories.filter(sc => {
+                                 const selectedStore = stores.find(s => s.id === (productFormStoreId || (editingProduct as any)?.store_id));
+                                 const catId = selectedStore?.category_id || (selectedStore as any)?.category;
+                                 return sc.category_id === catId;
+                              }).map(sc => (
+                                 <option key={sc.id} value={sc.name}>{sc.name}</option>
+                              ))}
+                           </select>
+                        </div>
+
                         <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
                            <div className="flex flex-col">
                               <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Prix Editable</span>
@@ -5189,7 +5245,7 @@ ${itemsText}
                                  <p className="text-[9px] text-slate-400 font-bold mt-1">La 1ère image sera l'image principale</p>
                               </div>
                               <div className="bg-slate-200 text-slate-600 px-3 py-1 rounded-full text-[9px] font-black">
-                                 {productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0)}/4
+                                 {productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0)}/20
                               </div>
                            </div>
 
@@ -5235,7 +5291,7 @@ ${itemsText}
                               ))}
 
                               {/* Upload Button */}
-                              {(productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0)) < 4 && (
+                              {(productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0)) < 20 && (
                                  <label className="w-full aspect-square bg-white border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center cursor-pointer hover:border-orange-400 hover:bg-orange-50 transition-all group">
                                     <Plus size={20} className="text-slate-300 group-hover:text-orange-400 transition-colors" />
                                     <span className="text-[9px] text-slate-400 font-bold mt-1">Ajouter image</span>
@@ -5247,7 +5303,7 @@ ${itemsText}
                                           const file = e.target.files?.[0];
                                           if (file) {
                                              const totalImages = productAdditionalImages.length + (productImagePreview || editingProduct?.image ? 1 : 0);
-                                             if (totalImages >= 4) return;
+                                             if (totalImages >= 20) return;
 
                                              const reader = new FileReader();
                                              reader.onloadend = () => {
@@ -5310,7 +5366,7 @@ ${itemsText}
                         <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[1.75rem] font-black uppercase text-xs tracking-widest shadow-xl">{editingProduct ? 'Enregistrer' : 'Ajouter au Catalogue'}</button>
                      </form>
                   </div>
-               </div>
+               </div >
             )
          }
 
@@ -5361,7 +5417,7 @@ ${itemsText}
                                  defaultValue={editingStore?.category_id || editingStore?.category || ''}
                                  required
                                  className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer"
-                                 onChange={(e) => setEditingStore(prev => prev ? { ...prev, category_id: e.target.value } : null)}
+                                 onChange={(e) => setEditingStore(prev => prev ? { ...prev, category_id: e.target.value, sub_category: '' } : null)}
                               >
                                  <option value="">Sélectionner une catégorie</option>
                                  {dbCategories.map((c: any) => (
@@ -5374,7 +5430,8 @@ ${itemsText}
                            <label className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Sous-Catégorie</label>
                            <select
                               name="sub_category"
-                              defaultValue={editingStore?.sub_category || ''}
+                              value={editingStore?.sub_category || ''}
+                              onChange={(e) => setEditingStore(prev => prev ? { ...prev, sub_category: e.target.value } : null)}
                               className="w-full bg-slate-50 border-transparent focus:border-orange-500 border-2 outline-none rounded-2xl p-4 font-bold transition-all appearance-none cursor-pointer"
                            >
                               <option value="">Aucune</option>

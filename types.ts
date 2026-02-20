@@ -25,6 +25,7 @@ export interface Product {
   options?: string[];
   description?: string;
   price_editable?: boolean;
+  sub_category?: string;
 }
 
 export interface Store {

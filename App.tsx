@@ -409,6 +409,7 @@ export default function App() {
           longitude: s.longitude ? Number(s.longitude) : null,
           user_visible_fields: s.user_visible_fields,
           user_field_labels: s.user_field_labels || {},
+          sub_category: s.sub_category,
           products: productsRes.data
             .filter((p: any) => p.store_id === s.id)
             .map((p: any) => ({
@@ -422,7 +423,8 @@ export default function App() {
               price_editable: p.price_editable,
               product_images: p.product_images || p.images || [],
               user_visible_fields: p.user_visible_fields,
-              user_field_labels: p.user_field_labels || {}
+              user_field_labels: p.user_field_labels || {},
+              sub_category: p.sub_category
             })),
         };
       });
