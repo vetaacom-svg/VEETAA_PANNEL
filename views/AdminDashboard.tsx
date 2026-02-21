@@ -3242,7 +3242,7 @@ ${itemsText}
                         <table className="w-full text-left">
                            <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
                               <tr>
-                                 <th className="px-8 py-6 w-10">
+                                 <th className="px-8 py-6 w-10 hidden">
                                     <input
                                        type="checkbox"
                                        checked={selectedOrderIds.length === paginatedOrders.length && paginatedOrders.length > 0}
@@ -3260,7 +3260,7 @@ ${itemsText}
                            <tbody className="divide-y text-sm">
                               {paginatedOrders.map(o => (
                                  <tr key={o.id} className={`hover:bg-slate-50 transition-colors ${selectedOrderIds.includes(o.id) ? 'bg-orange-50/50' : ''}`}>
-                                    <td className="px-8 py-5">
+                                    <td className="px-8 py-5 hidden">
                                        <input
                                           type="checkbox"
                                           checked={selectedOrderIds.includes(o.id)}
