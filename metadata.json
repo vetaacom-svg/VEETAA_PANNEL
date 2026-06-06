@@ -1,0 +1,7 @@
+{
+  "name": "Veetaa",
+  "description": "A mobile-first delivery application offering services for Food, Pharmacy, Bakery, Dry Cleaning, Groceries, and Express deliveries.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

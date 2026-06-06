@@ -1,0 +1,10 @@
+
+{
+  "appId": "com.veetaa.app",
+  "appName": "Veetaa",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

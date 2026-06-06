@@ -1,0 +1,7 @@
+{
+  "name": "Delivery Logistics Control Center",
+  "description": "A real-time administrative dashboard for managing delivery fleets, tracking customers, and optimizing store-to-customer logistics using AI-powered dispatch suggestions.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
