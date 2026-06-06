@@ -77,9 +77,11 @@ CREATE TABLE public.products (
   sub_category text,
   sub_category_id uuid,
   product_sub_category_id uuid,
+  store_sub_category_id uuid,
   CONSTRAINT products_pkey PRIMARY KEY (id),
   CONSTRAINT products_product_sub_category_id_fkey FOREIGN KEY (product_sub_category_id) REFERENCES public.product_sub_categories(id),
   CONSTRAINT products_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT products_store_sub_category_id_fkey FOREIGN KEY (store_sub_category_id) REFERENCES public.store_sub_categories(id),
   CONSTRAINT products_sub_category_id_fkey FOREIGN KEY (sub_category_id) REFERENCES public.sub_categories(id)
 );
 CREATE TABLE public.orders (
@@ -111,15 +113,15 @@ CREATE TABLE public.orders (
   store_invoice_base64 text,
   custom_images_base64 ARRAY DEFAULT '{}'::text[],
   CONSTRAINT orders_pkey PRIMARY KEY (id),
-  CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT orders_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
+  CONSTRAINT orders_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT orders_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.favorites (
   user_id uuid NOT NULL,
   store_id uuid NOT NULL,
   CONSTRAINT favorites_pkey PRIMARY KEY (user_id, store_id),
-  CONSTRAINT favorites_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id),
-  CONSTRAINT favorites_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
+  CONSTRAINT favorites_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT favorites_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(id)
 );
 CREATE TABLE public.drivers (
   id text NOT NULL,
@@ -339,8 +341,8 @@ CREATE TABLE public.partner_store_access (
   permissions jsonb DEFAULT '{"view_stats": true, "edit_profile": true, "manage_orders": true, "manage_products": true}'::jsonb,
   assigned_at timestamp with time zone DEFAULT now(),
   CONSTRAINT partner_store_access_pkey PRIMARY KEY (id),
-  CONSTRAINT partner_store_access_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.partner_accounts(id),
-  CONSTRAINT partner_store_access_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
+  CONSTRAINT partner_store_access_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT partner_store_access_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.partner_accounts(id)
 );
 CREATE TABLE public.partner_store_access_audit (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -418,15 +420,19 @@ CREATE TABLE public.store_sub_categories (
   name text NOT NULL,
   category_id text NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  store_id uuid,
   CONSTRAINT store_sub_categories_pkey PRIMARY KEY (id),
-  CONSTRAINT store_sub_categories_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id)
+  CONSTRAINT store_sub_categories_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(id),
+  CONSTRAINT store_sub_categories_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
 );
 CREATE TABLE public.product_sub_categories (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   name text NOT NULL,
   store_sub_category_id uuid NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
+  store_id uuid,
   CONSTRAINT product_sub_categories_pkey PRIMARY KEY (id),
+  CONSTRAINT product_sub_categories_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id),
   CONSTRAINT product_sub_categories_store_sub_category_id_fkey FOREIGN KEY (store_sub_category_id) REFERENCES public.store_sub_categories(id)
 );
 CREATE TABLE public.admin_login_security (

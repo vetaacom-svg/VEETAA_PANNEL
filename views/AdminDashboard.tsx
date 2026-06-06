@@ -2240,7 +2240,12 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
                permissions
             }).eq('id', editingPartner.id);
             if (error) throw error;
-            await supabase.from('partner_store_access').delete().eq('partner_id', editingPartner.id);
+            
+            // Delete old access
+            const { error: deleteErr } = await supabase.from('partner_store_access').delete().eq('partner_id', editingPartner.id);
+            if (deleteErr) {
+               console.warn('Warning during old access deletion:', deleteErr);
+            }
          } else {
             // Créer le partenaire
             const { data, error } = await supabase.from('partner_accounts').insert([{
@@ -2271,18 +2276,22 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
             }
          }
 
-         if (selectedPartnerStores.length > 0) {
+         if (partnerId && selectedPartnerStores.length > 0) {
             const accessEntries = selectedPartnerStores.map(sid => ({
                partner_id: partnerId,
                store_id: sid
             }));
             const { error: accessError } = await supabase.from('partner_store_access').insert(accessEntries);
-            if (accessError) throw accessError;
+            if (accessError) {
+               // If it's a foreign key constraint issue (usually related to the audit trigger), log it but don't break the whole flow if the partner was updated
+               console.error('❌ partner_store_access insert failed:', accessError);
+               throw accessError;
+            }
             console.log('✅ Accès aux magasins créés:', selectedPartnerStores.length);
          }
 
          // ✅ Mise à jour IMMÉDIATE du state pour affichage instant
-         if (!editingPartner) {
+         if (!editingPartner && partnerId) {
             const newPartner = {
                id: partnerId,
                email,
@@ -2302,7 +2311,7 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
          setTimeout(() => onBack(), 500);  // Petit délai pour voir l'ajout immédiat
       } catch (err: any) {
          console.error('❌ Error saving partner:', err);
-         alert('Erreur lors de la sauvegarde du partenaire: ' + err.message);
+         alert('Erreur lors de la sauvegarde du partenaire: ' + (err.message || JSON.stringify(err)));
       }
    };
 
