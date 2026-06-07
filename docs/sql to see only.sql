@@ -355,8 +355,8 @@ CREATE TABLE public.partner_store_access_audit (
   changed_at timestamp with time zone DEFAULT now(),
   reason text,
   CONSTRAINT partner_store_access_audit_pkey PRIMARY KEY (id),
-  CONSTRAINT partner_store_access_audit_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.partner_accounts(id),
-  CONSTRAINT partner_store_access_audit_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
+  CONSTRAINT partner_store_access_audit_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id),
+  CONSTRAINT partner_store_access_audit_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.partner_accounts(id)
 );
 CREATE TABLE public.admin_accounts (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
@@ -469,4 +469,23 @@ CREATE TABLE public.admin_presence (
   role text NOT NULL,
   last_seen_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT admin_presence_pkey PRIMARY KEY (username)
+);
+CREATE TABLE public.audit_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  partner_id uuid,
+  store_id uuid,
+  action text NOT NULL,
+  details text,
+  ip_address text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT audit_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT audit_logs_partner_id_fkey FOREIGN KEY (partner_id) REFERENCES public.partner_accounts(id),
+  CONSTRAINT audit_logs_store_id_fkey FOREIGN KEY (store_id) REFERENCES public.stores(id)
+);
+CREATE TABLE public.login_attempts (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  phone text NOT NULL,
+  success boolean NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT login_attempts_pkey PRIMARY KEY (id)
 );

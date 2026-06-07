@@ -189,9 +189,9 @@ const LiveMap: React.FC<MapProps> = ({ stores, drivers, users, orders, selectedO
           );
         })}
 
-        {/* LIVREURS (Disponibles uniquement, ou assigné à la commande focus) */}
+        {/* LIVREURS (Qui ont activé le radar / en ligne uniquement, ou assigné à la commande focus) */}
         {drivers
-          .filter(d => d.status === 'available' || d.status === 'online' || (selectedOrderId && d.id === selectedOrder?.assignedDriverId))
+          .filter(d => d.is_online || (selectedOrderId && d.id === selectedOrder?.assignedDriverId))
           .map(driver => {
             const lat = driver.lastLat || driver.last_lat;
             const lng = driver.lastLng || driver.last_lng;

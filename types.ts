@@ -116,6 +116,7 @@ export interface Driver {
   delivery_count?: number;
   createdAt: number;
   created_at?: string;
+  is_online?: boolean;
   status: 'available' | 'busy' | 'offline' | 'online';
   lastLat?: number;
   lastLng?: number;

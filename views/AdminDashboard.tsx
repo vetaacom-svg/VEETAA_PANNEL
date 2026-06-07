@@ -985,7 +985,7 @@ const LogisticsSidebar: React.FC<{
                                     onChange={(e) => { if (e.target.value && onAssignDriver) onAssignDriver(selectedOrderFull.id, e.target.value); }}
                                  >
                                     <option value="" disabled>Choisir…</option>
-                                    {drivers.filter(d => d.status !== 'offline').map(d => {
+                                    {drivers.filter(d => d.is_online || d.id === selectedOrderFull.assignedDriverId).map(d => {
                                        const isActive = d.status === 'busy' || orders.filter(o => o.status !== 'delivered' && !o.isArchived).some(o => o.assignedDriverId === d.id);
                                        return (<option key={d.id} value={d.id}>{isActive ? '🔴 ' : '🟢 '}{d.full_name || d.fullName}</option>);
                                     })}
@@ -1666,7 +1666,7 @@ const MapComponent: React.FC<{
                                        }}
                                     >
                                        <option value="" disabled>Livreur…</option>
-                                       {drivers.filter(d => d.status !== 'offline').map(d => (
+                                       {drivers.filter(d => d.is_online || d.id === order.assignedDriverId).map(d => (
                                           <option key={d.id} value={d.id}>{d.full_name || d.fullName}</option>
                                        ))}
                                     </select>
@@ -6696,8 +6696,8 @@ ${itemsText}
                                              ].join(' ')}
                                           >
                                              <option value="">Non assigné</option>
-                                             {drivers.map(d => (
-                                                <option key={d.id} value={d.id}>{d.fullName}</option>
+                                             {drivers.filter(d => d.is_online || d.id === o.assignedDriverId).map(d => (
+                                                <option key={d.id} value={d.id}>{d.fullName || d.full_name}</option>
                                              ))}
                                           </select>
                                           <User size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none opacity-40" />
@@ -6953,7 +6953,7 @@ ${itemsText}
                                     <div className="hidden h-3 w-px bg-slate-200 sm:block" />
                                     <div className="flex items-center gap-1.5">
                                        <span className="h-2 w-2 rounded-full bg-slate-900"></span>
-                                       <span className="text-[10px] font-black uppercase text-slate-700">{drivers.filter(d => d.status !== 'offline').length} Livreurs</span>
+                                       <span className="text-[10px] font-black uppercase text-slate-700">{drivers.filter(d => d.is_online).length} Livreurs</span>
                                     </div>
                                  </div>
                                  <div className="pointer-events-auto rounded-lg border border-slate-200 bg-slate-100/95 px-2.5 py-1 text-[9px] font-bold text-slate-600">
@@ -9665,9 +9665,9 @@ ${itemsText}
                                  ].join(' ')}
                               >
                                  <option value="">Non assigné</option>
-                                 {drivers.map(d => (
-                                    <option key={d.id} value={d.id}>{d.fullName}</option>
-                                 ))}
+                                 {drivers.filter(d => d.is_online || d.id === selectedOrder.assignedDriverId).map(d => (
+                                    <option key={d.id} value={d.id}>{d.fullName || d.full_name}</option>
+                                  ))}
                               </select>
                               {selectedOrder.assignedDriverId ? (
                                  <div
