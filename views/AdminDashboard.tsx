@@ -1372,9 +1372,14 @@ const MapComponent: React.FC<{
 
       return L.divIcon({
          html: `<div class="relative w-8 h-8 rounded-full border-[3px] border-white shadow-lg ${bgColor} ${shadowColor} flex items-center justify-center transition-transform hover:scale-110" style="${ring}">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" class="w-4 h-4">
-               <path d="M3.375 3C2.339 3 1.5 3.84 1.5 4.875v.75c0 1.036.84 1.875 1.875 1.875h17.25c1.035 0 1.875-.84 1.875-1.875v-.75C22.5 3.839 21.66 3 20.625 3H3.375z" />
-               <path fill-rule="evenodd" d="M3.087 9l.54 9.176A3 3 0 006.62 21h10.757a3 3 0 002.995-2.824L20.913 9H3.087zm6.163 3.75A.75.75 0 0110 12h4a.75.75 0 010 1.5h-4a.75.75 0 01-.75-.75z" clip-rule="evenodd" />
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4">
+               <circle cx="18.5" cy="17.5" r="2.5"/>
+               <circle cx="5.5" cy="17.5" r="2.5"/>
+               <circle cx="15" cy="5" r="1" fill="white"/>
+               <path d="M12 17.5V14l-3-3-4 3"/>
+               <path d="m8 14 3-3 4-3 3.5 3"/>
+               <path d="M5.5 17.5 9.5 11"/>
+               <path d="M18.5 17.5 14 9"/>
             </svg>
             ${isBusy ? `<span class="absolute -top-1 -right-1 w-3 h-3 bg-red-400 rounded-full animate-ping border border-white"></span>` : ''}
             ${!isBusy && !isOffline ? `<span class="absolute -top-1 -right-1 w-3 h-3 bg-blue-400 rounded-full animate-pulse border border-white"></span>` : ''}
@@ -1389,9 +1394,8 @@ const MapComponent: React.FC<{
    const OrderDestinationIcon = L.divIcon({
       html: `<div class="relative w-7 h-7 rounded-full bg-white border-[3px] border-slate-800 shadow-md flex items-center justify-center transition-transform hover:scale-110 group">
          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 text-slate-800">
-            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
-            <polyline points="3.29 7 12 12 20.71 7"></polyline>
-            <line x1="12" x2="12" y1="22" y2="12"></line>
+            <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
          </svg>
          <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-orange-500 rounded-full border border-white"></span>
       </div>`,
@@ -9888,10 +9892,10 @@ ${itemsText}
                                     {/* Assigned Driver Marker */}
                                     {(() => {
                                        const driver = drivers.find(d => d.id === selectedOrder.assignedDriverId);
-                                       if (driver && driver.latitude && driver.longitude) {
+                                       if (driver && driver.lastLat && driver.lastLng) {
                                           return (
                                              <Marker
-                                                position={[driver.latitude, driver.longitude]}
+                                                position={[driver.lastLat, driver.lastLng]}
                                                 icon={DriverBusyMarkerIcon}
                                              >
                                                 <Popup className="custom-popup">
