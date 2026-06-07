@@ -140,6 +140,25 @@ function mergeOrderUpdatePreservingMissing(prev: Order, merged: Order, rawRow: R
   return out;
 }
 
+/**
+ * Fusionne de manière sécurisée un payload temps-réel (qui peut être partiel) dans l'objet existant.
+ * Évite d'écraser les champs existants par 'undefined' ou 'null' si le payload ne les contient pas,
+ * tout en convertissant les champs snake_case de la DB vers le camelCase du frontend.
+ */
+function mergeRealtimePayload(prev: any, nextPayload: any, mappings: Record<string, string>): any {
+  const merged = { ...prev };
+  for (const [key, val] of Object.entries(nextPayload)) {
+    if (val !== undefined && val !== null) {
+      merged[key] = val;
+      const camelKey = mappings[key];
+      if (camelKey) {
+        merged[camelKey] = val;
+      }
+    }
+  }
+  return merged;
+}
+
 const LoadingScreen = () => (
   <div className="flex flex-col items-center justify-center min-h-screen bg-white">
     <svg className="pl" width="128px" height="128px" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
@@ -523,34 +542,77 @@ export default function App() {
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, (payload) => {
+        console.log('🚗 REALTIME DRIVER EVENT:', payload.eventType, payload.new);
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const d = payload.new as any;
-          const mapped = {
-            ...d,
-            fullName: d.full_name, idCardNumber: d.id_card_number, profilePhoto: d.profile_photo,
-            lastLat: d.last_lat, lastLng: d.last_lng,
-            createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
-          };
+          console.log('🚗 Driver update:', d.full_name, '| is_online:', d.is_online, '| status:', d.status);
+          
           setDrivers(prev => {
-            const exists = prev.some(dr => dr.id === d.id);
-            if (exists) return prev.map(dr => dr.id === d.id ? { ...dr, ...mapped } : dr);
+            const exists = prev.find(dr => dr.id === d.id);
+            if (exists) {
+              const driverMappings: Record<string, string> = {
+                full_name: 'fullName',
+                id_card_number: 'idCardNumber',
+                profile_photo: 'profilePhoto',
+                last_lat: 'lastLat',
+                last_lng: 'lastLng',
+                created_at: 'createdAt'
+              };
+              return prev.map(dr => {
+                if (dr.id !== d.id) return dr;
+                const merged = mergeRealtimePayload(dr, d, driverMappings);
+                if ('is_online' in d) merged.is_online = d.is_online ?? false;
+                if ('created_at' in d && d.created_at) merged.createdAt = new Date(d.created_at).getTime();
+                return merged;
+              });
+            }
+            
+            const mapped = {
+              ...d,
+              is_online: d.is_online ?? false,
+              fullName: d.full_name || '',
+              idCardNumber: d.id_card_number || '',
+              profilePhoto: d.profile_photo || '',
+              lastLat: d.last_lat,
+              lastLng: d.last_lng,
+              createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
+            };
             return [...prev, mapped];
           });
         } else if (payload.eventType === 'DELETE') {
-          setDrivers(prev => prev.filter(dr => dr.id === payload.old.id));
+          setDrivers(prev => prev.filter(dr => dr.id !== (payload.old as any).id));
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, (payload) => {
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const u = payload.new as any;
-          const mapped = {
-            id: u.id, fullName: u.full_name, phone: u.phone, email: u.email,
-            language: u.language, isAdmin: u.is_admin, isBlocked: u.is_blocked,
-            lastLat: u.last_lat, lastLng: u.last_lng
-          };
           setUsers(prev => {
-            const exists = prev.some(user => user.id === u.id);
-            if (exists) return prev.map(user => user.id === u.id ? { ...user, ...mapped } : user);
+            const exists = prev.find(user => user.id === u.id);
+            if (exists) {
+              const profileMappings: Record<string, string> = {
+                full_name: 'fullName',
+                is_admin: 'isAdmin',
+                is_blocked: 'isBlocked',
+                last_lat: 'lastLat',
+                last_lng: 'lastLng'
+              };
+              return prev.map(user => {
+                if (user.id !== u.id) return user;
+                return mergeRealtimePayload(user, u, profileMappings);
+              });
+            }
+            
+            const mapped = {
+              id: u.id,
+              fullName: u.full_name || '',
+              phone: u.phone || '',
+              email: u.email || '',
+              language: u.language || 'fr',
+              isAdmin: u.is_admin ?? false,
+              isBlocked: u.is_blocked ?? false,
+              lastLat: u.last_lat,
+              lastLng: u.last_lng
+            };
             return [...prev, mapped];
           });
         } else if (payload.eventType === 'DELETE') {
@@ -572,15 +634,29 @@ export default function App() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, debouncedRefresh)
       .subscribe();
 
-    // Polling fallback: reduced frequency to save bandwidth (Realtime is primary)
+    // Polling fallback: secondary synchronization backup (Realtime is primary)
     const polling = setInterval(() => {
       try {
         const adminToken = localStorage.getItem('veetaa_admin_token');
         if (adminToken) {
           fetchOrders(false);
+          // Refetch drivers in background to guarantee eventual consistency
+          supabase.from('drivers').select('*').then(({ data, error }) => {
+            if (!error && data) {
+              setDrivers(data.map((d: any) => ({
+                ...d,
+                fullName: d.full_name,
+                idCardNumber: d.id_card_number,
+                profilePhoto: d.profile_photo,
+                lastLat: d.last_lat,
+                lastLng: d.last_lng,
+                createdAt: d.created_at ? new Date(d.created_at).getTime() : Date.now()
+              })));
+            }
+          });
         }
       } catch (e) {
-        console.warn('Polling orders failed', e);
+        console.warn('Polling fallback failed', e);
       }
     }, 20000); // 60 seconds instead of 15s
 
