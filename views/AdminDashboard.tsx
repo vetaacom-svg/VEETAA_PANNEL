@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
@@ -2438,6 +2438,7 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
    const [productSortOrder, setProductSortOrder] = useState<'newest' | 'oldest' | 'name' | 'price'>('newest');
    const [storeFilter, setStoreFilter] = useState('all');
    const [storeOptionsFilter, setStoreOptionsFilter] = useState<{ is_featured?: boolean; is_new?: boolean; has_products?: boolean }>({});
+   const [storeZoneFilter, setStoreZoneFilter] = useState<string>('all');
    const [currentPage, setCurrentPage] = useState(1);
    const [itemsPerPage] = useState(15);
    const [isRefreshing, setIsRefreshing] = useState(false);
@@ -4724,7 +4725,8 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
          longitude: extractedCoordinates?.lng !== undefined ? extractedCoordinates.lng : (editingStore?.longitude || null),
          user_visible_fields: storeVisibleFields,
          user_field_labels: Object.keys(storeFieldLabels).length ? storeFieldLabels : {},
-         zone_id: formData.get('zone_id') as string || null
+         zone_id: formData.get('zone_id') as string || null,
+         phone: (formData.get('phone') as string || '').trim() || null
       };
 
       // 🔍 DEBUG: Log the store data being saved
@@ -5004,8 +5006,10 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
          (!storeOptionsFilter.is_new || s.is_new) &&
          (!storeOptionsFilter.has_products || s.has_products);
 
-      return matchesSearch && matchesOptions;
-   }), [stores, lowerSearch, storeOptionsFilter]);
+      const matchesZone = storeZoneFilter === 'all' || s.zone_id === storeZoneFilter;
+
+      return matchesSearch && matchesOptions && matchesZone;
+   }), [stores, lowerSearch, storeOptionsFilter, storeZoneFilter]);
 
    const filteredProducts = useMemo(() => {
       let result = localProducts.filter(p => {
@@ -7555,6 +7559,27 @@ ${itemsText}
                               </button>
                            </div>
                         </div>
+
+                         {/* Filtre par Ville / Zone */}
+                         <div className="flex flex-col gap-1.5 min-w-[180px]">
+                            <label className={`text-[10px] font-black uppercase tracking-widest pl-1 ${darkModeIsStores ? 'text-slate-400' : 'text-slate-400'}`}>
+                               🏙️ Filtrer par Ville
+                            </label>
+                            <select
+                               value={storeZoneFilter}
+                               onChange={(e) => setStoreZoneFilter(e.target.value)}
+                               className={`px-3 py-2.5 rounded-xl text-[11px] font-bold border transition-all appearance-none cursor-pointer outline-none focus:ring-2 focus:ring-orange-400/50 ${
+                                  darkModeIsStores
+                                     ? 'bg-slate-900 text-slate-200 border-slate-700 hover:border-orange-400/70'
+                                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-orange-400'
+                               }`}
+                            >
+                               <option value="all">🌍 Toutes les villes</option>
+                               {deliveryZones.map(zone => (
+                                  <option key={zone.id} value={zone.id}>{zone.name}</option>
+                               ))}
+                            </select>
+                         </div>
 
                         {/* Effacer & Stats */}
                         <div className="ml-auto flex gap-4 items-end">
@@ -10904,6 +10929,19 @@ ${itemsText}
                                  ))}
                                </select>
                             </div>
+                         </div>
+                         <div className="space-y-2">
+                            <label className="text-[10px] font-black text-slate-800 uppercase tracking-widest flex items-center gap-1.5">
+                               <Phone size={11} className="text-orange-500" />
+                               Numéro de Téléphone
+                            </label>
+                            <input
+                               name="phone"
+                               type="tel"
+                               defaultValue={editingStore?.phone || ''}
+                               placeholder="Ex: 0600000000"
+                               className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 focus:ring-1 focus:ring-orange-300 outline-none rounded-lg p-3 font-bold transition-all text-sm"
+                            />
                          </div>
                          <div className="grid grid-cols-3 gap-3 bg-slate-100 p-5 rounded-lg border border-slate-200">
                            <div className="flex flex-col items-center gap-2">

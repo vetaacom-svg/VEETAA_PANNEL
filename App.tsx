@@ -95,6 +95,7 @@ function mapStoresWithProductGroups(storesData: any[], byStore: Map<string, any[
       user_field_labels: s.user_field_labels || {},
       sub_category: s.sub_category,
       zone_id: s.zone_id,
+      phone: s.phone || null,
       products: rawList.map((p: any) => ({
         id: p.id,
         name: p.name,

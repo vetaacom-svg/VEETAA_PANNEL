@@ -53,6 +53,7 @@ export interface Store {
   has_products?: boolean;
   latitude?: number;
   longitude?: number;
+  phone?: string;
   sub_category?: string;
   zone_id?: string;
 }
