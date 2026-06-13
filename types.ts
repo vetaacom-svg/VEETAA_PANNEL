@@ -128,6 +128,8 @@ export interface Driver {
   /** Si la base renvoie une date de dernière position (ex. colonne optionnelle). */
   last_position_at?: string;
   updated_at?: string;
+  /** ID de la ville/zone de livraison assignée au livreur */
+  zone_id?: string;
 }
 
 export interface CartItem {

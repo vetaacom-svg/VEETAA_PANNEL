@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
@@ -4011,7 +4011,8 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
             description: formData.get('description') as string,
             status: editingDriver ? editingDriver.status : 'available',
             documents: finalDocs,
-            warns: driverWarns
+            warns: driverWarns,
+            zone_id: (formData.get('zone_id') as string) || null,
          };
 
          if (editingDriver) {
@@ -7305,6 +7306,7 @@ ${itemsText}
                                  <th className="px-4 py-3 whitespace-nowrap">Livreur</th>
                                  <th className="px-4 py-3 whitespace-nowrap">Statut</th>
                                  <th className="px-4 py-3 whitespace-nowrap text-center">Livraisons</th>
+                                 <th className="px-4 py-3 whitespace-nowrap text-center">Ville</th>
                                  <th className="px-4 py-3 whitespace-nowrap text-right">Balance</th>
                                  <th className="px-4 py-3 whitespace-nowrap text-right">Frais Totaux</th>
                                  <th className="px-4 py-3 whitespace-nowrap text-right">Commission Admin</th>
@@ -7372,11 +7374,25 @@ ${itemsText}
                                     <td className="px-4 py-3 whitespace-nowrap font-black text-slate-700 text-center text-xs">
                                        {propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered').length}
                                     </td>
+                                     {/* Ville / Zone */}
+                                     <td className="px-4 py-3 whitespace-nowrap text-center">
+                                        {(() => {
+                                           const zone = deliveryZones.find(z => z.id === (d as any).zone_id);
+                                           return zone ? (
+                                              <span className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 border border-indigo-100 px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                                                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+                                                 {zone.name}
+                                              </span>
+                                           ) : (
+                                              <span className="text-[9px] font-medium text-slate-400 bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">—</span>
+                                           );
+                                        })()}
+                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap text-right">
                                        {(() => {
                                           const windowStart = Date.now() - balanceRangeMs;
                                           const balanceOrders = propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered' && (o.timestamp || 0) >= windowStart);
-                                          const balanceTotal = balanceOrders.reduce((s, o) => s + (o.total || 0), 0);
+                                          const balanceTotal = balanceOrders.reduce((s, o) => s + orderFinanceBreakdown(o).grand, 0);
                                           return (
                                              <div className="flex flex-col">
                                                 <span className="font-black text-slate-700">{Math.round(balanceTotal)} DH</span>
@@ -7389,7 +7405,7 @@ ${itemsText}
                                        {(() => {
                                           const windowStart = Date.now() - balanceRangeMs;
                                           const feeOrders = propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered' && (o.timestamp || 0) >= windowStart);
-                                          const totalFees = feeOrders.reduce((s, o) => s + ((o.total_final || 0) - (o.total || 0)), 0);
+                                          const totalFees = feeOrders.reduce((s, o) => s + orderFinanceBreakdown(o).delivery, 0);
                                           return (
                                              <div className="flex flex-col">
                                                 <span className="font-black text-slate-700">{Math.round(totalFees)} DH</span>
@@ -7404,7 +7420,7 @@ ${itemsText}
                                        {(() => {
                                           const windowStart = Date.now() - balanceRangeMs;
                                           const feeOrders = propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered' && (o.timestamp || 0) >= windowStart);
-                                          const totalFees = feeOrders.reduce((s, o) => s + ((o.total_final || 0) - (o.total || 0)), 0);
+                                          const totalFees = feeOrders.reduce((s, o) => s + orderFinanceBreakdown(o).delivery, 0);
                                           const rate = driverCommissions[d.id] ?? 25;
                                           const adminShare = totalFees * (rate / 100);
                                           return (
@@ -7433,13 +7449,13 @@ ${itemsText}
                                        {(() => {
                                           const windowStart = Date.now() - balanceRangeMs;
                                           const feeOrders = propOrders.filter(o => o.assignedDriverId === d.id && o.status === 'delivered' && (o.timestamp || 0) >= windowStart);
-                                          const totalFees = feeOrders.reduce((s, o) => s + ((o.total_final || 0) - (o.total || 0)), 0);
+                                          const totalFees = feeOrders.reduce((s, o) => s + orderFinanceBreakdown(o).delivery, 0);
                                           const rate = driverCommissions[d.id] ?? 25;
                                           const driverShare = totalFees * (1 - rate / 100);
                                           return (
                                              <div className="flex flex-col justify-center">
                                                 <span className="font-black text-emerald-600">{Math.round(driverShare)} DH</span>
-                                                <span className="text-[9px] font-bold text-emerald-400/80">{100 - rate}% du total</span>
+                                                <span className="text-[9px] font-bold text-emerald-400/80">{100 - rate}% des frais</span>
                                              </div>
                                           );
                                        })()}
@@ -10472,9 +10488,28 @@ ${itemsText}
                            </div>
                         </div>
                         <div className="space-y-1">
-                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Description / Zone</label>
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Description</label>
                            <textarea name="description" defaultValue={editingDriver?.description} rows={2} className="w-full bg-slate-50 border border-slate-200 focus:border-orange-500 outline-none rounded-xl px-3 py-2 text-sm font-bold transition-all resize-none shadow-sm" />
                         </div>
+
+                        {/* VILLE / ZONE */}
+                        <div className="space-y-1">
+                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 flex items-center gap-1.5">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={3} className="text-indigo-500"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
+                              Ville / Zone de livraison
+                           </label>
+                           <select
+                              name="zone_id"
+                              defaultValue={(editingDriver as any)?.zone_id ?? ""}
+                              className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 outline-none rounded-xl px-3 py-2.5 text-sm font-bold transition-all shadow-sm"
+                           >
+                              <option value="">— Aucune ville assignée —</option>
+                              {deliveryZones.filter(z => z.is_active !== false).map(zone => (
+                                 <option key={zone.id} value={zone.id}>{zone.name}</option>
+                              ))}
+                           </select>
+                        </div>
+
                         <button type="submit" className="w-full bg-gradient-to-r from-slate-900 to-slate-800 text-white py-3.5 rounded-xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">
                            {editingDriver ? 'Sauvegarder' : 'Ajouter Livreur'}
                         </button>
@@ -12024,4 +12059,5 @@ const AdminDashboard: React.FC<AdminDashboardProps> = props => (
 );
 
 export default AdminDashboard;
+
 
