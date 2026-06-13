@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
@@ -2156,6 +2156,25 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
    const [deleteStorePassword, setDeleteStorePassword] = useState('');
    const [isDeleting, setIsDeleting] = useState(false);
 
+   // --- Modal de confirmation suppression catégorie ---
+   const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
+   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<{ id: string; name_fr: string } | null>(null);
+   const [deleteCategoryLoading, setDeleteCategoryLoading] = useState(false);
+
+   // --- Modal de réaffectation/suppression sous-catégorie ---
+   const [showDeleteSubCatModal, setShowDeleteSubCatModal] = useState(false);
+   const [deleteSubCatTarget, setDeleteSubCatTarget] = useState<{ id: string; name: string } | null>(null);
+   const [deleteSubCatLinkedCount, setDeleteSubCatLinkedCount] = useState(0);
+   const [deleteSubCatChoices, setDeleteSubCatChoices] = useState<Array<{ id: string; name: string }>>([]);
+   const [deleteSubCatReplacement, setDeleteSubCatReplacement] = useState('');
+   const [deleteSubCatLoading, setDeleteSubCatLoading] = useState(false);
+   const [deleteSubCatError, setDeleteSubCatError] = useState<string | null>(null);
+
+   // --- Modal suppression store sous-catégorie ---
+   const [showDeleteStoreSubCatModal, setShowDeleteStoreSubCatModal] = useState(false);
+   const [deleteStoreSubCatId, setDeleteStoreSubCatId] = useState<string | null>(null);
+   const [deleteStoreSubCatName, setDeleteStoreSubCatName] = useState('');
+
    const handleSavePromo = async (e: React.FormEvent) => {
       e.preventDefault();
       const form = e.target as HTMLFormElement;
@@ -3700,12 +3719,23 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
       setIsAddingStoreSubCat(false);
    };
 
-   const handleDeleteStoreSubCategory = async (id: string) => {
-      if (!window.confirm('Supprimer cette sous-catégorie ? Les produits liés seront dissociés.')) return;
-      const { error } = await supabase.from('store_sub_categories').delete().eq('id', id);
-      if (error) alert('Erreur : ' + error.message);
-      else setStoreSubCategories(prev => prev.filter(sc => sc.id !== id));
+   const handleDeleteStoreSubCategory = (id: string) => {
+      const sc = storeSubCategories.find(s => s.id === id);
+      setDeleteStoreSubCatId(id);
+      setDeleteStoreSubCatName((sc as any)?.name || '');
+      setShowDeleteStoreSubCatModal(true);
    };
+
+   const confirmDeleteStoreSubCategory = async () => {
+      if (!deleteStoreSubCatId) return;
+      const { error } = await supabase.from('store_sub_categories').delete().eq('id', deleteStoreSubCatId);
+      if (error) { alert('Erreur : ' + error.message); return; }
+      setStoreSubCategories(prev => prev.filter(sc => sc.id !== deleteStoreSubCatId));
+      setShowDeleteStoreSubCatModal(false);
+      setDeleteStoreSubCatId(null);
+      setDeleteStoreSubCatName('');
+   };
+
 
    const handleCreateSubCategory = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -3740,7 +3770,9 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
    };
 
    const handleDeleteSubCategory = async (id: string) => {
-      if (!confirm("Voulez-vous vraiment supprimer cette sous-catégorie ?")) return;
+      setDeleteSubCatLoading(true);
+      setDeleteSubCatError(null);
+      setDeleteSubCatReplacement('');
       try {
          // 1) Charger la sous-catégorie cible pour connaître sa catégorie
          const { data: targetSub, error: targetErr } = await supabase
@@ -3749,88 +3781,60 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
             .eq('id', id)
             .single();
          if (targetErr) {
-            alert("Erreur: " + targetErr.message);
+            setDeleteSubCatError(targetErr.message);
+            setShowDeleteSubCatModal(true);
             return;
          }
 
-         // 2) Vérifier les produits liés (FK products_sub_category_id_fkey)
-         const { data: linkedProducts, error: linkedErr } = await supabase
-            .from('products')
-            .select('id')
-            .eq('sub_category_id', id);
-         if (linkedErr) {
-            alert("Erreur: " + linkedErr.message);
-            return;
-         }
+         // 2) Vérifier les produits liés
+         const [{ data: linkedProducts, error: linkedErr }, { data: choicesData, error: choicesErr }] = await Promise.all([
+            supabase.from('products').select('id').eq('sub_category_id', id),
+            supabase.from('sub_categories').select('id, name').eq('category_id', (targetSub as any).category_id).neq('id', id).order('name', { ascending: true })
+         ]);
 
-         const linkedCount = linkedProducts?.length || 0;
+         if (linkedErr) { setDeleteSubCatError(linkedErr.message); setShowDeleteSubCatModal(true); return; }
+
+         setDeleteSubCatTarget({ id, name: (targetSub as any).name || id });
+         setDeleteSubCatLinkedCount(linkedProducts?.length || 0);
+         setDeleteSubCatChoices((choicesData || []) as Array<{ id: string; name: string }>);
+         setShowDeleteSubCatModal(true);
+      } catch {
+         setDeleteSubCatError('Erreur lors de la préparation.');
+         setShowDeleteSubCatModal(true);
+      } finally {
+         setDeleteSubCatLoading(false);
+      }
+   };
+
+   const confirmDeleteSubCategory = async () => {
+      if (!deleteSubCatTarget || deleteSubCatLoading) return;
+      setDeleteSubCatLoading(true);
+      setDeleteSubCatError(null);
+      try {
+         const linkedCount = deleteSubCatLinkedCount;
          if (linkedCount > 0) {
-            // 3) Proposer une sous-catégorie de remplacement de la même catégorie
-            const { data: choicesData, error: choicesErr } = await supabase
-               .from('sub_categories')
-               .select('id, name')
-               .eq('category_id', (targetSub as any).category_id)
-               .neq('id', id)
-               .order('name', { ascending: true });
-            if (choicesErr) {
-               alert("Erreur: " + choicesErr.message);
-               return;
-            }
-
-            let replacementSubId: string | null = null;
-            const choices = (choicesData || []) as Array<{ id: string; name: string }>;
-
-            if (choices.length > 0) {
-               const list = choices.map(c => `- ${c.name} (${c.id})`).join('\n');
-               const picked = window.prompt(
-                  `Cette sous-catégorie est utilisée par ${linkedCount} produit(s).\n` +
-                  `Entrez l'ID (ou le nom exact) de la sous-catégorie de remplacement,\n` +
-                  `ou laissez vide pour détacher les produits.\n\n` +
-                  `Options:\n${list}`
-               );
-               if (picked === null) return;
-               const normalized = picked.trim().toLowerCase();
-               if (normalized.length > 0) {
-                  const target = choices.find(
-                     c => String(c.id).toLowerCase() === normalized || String(c.name || '').trim().toLowerCase() === normalized
-                  );
-                  if (!target) {
-                     alert("Sous-catégorie de remplacement introuvable. Suppression annulée.");
-                     return;
-                  }
-                  replacementSubId = String(target.id);
-               }
-            } else {
-               const proceed = confirm(
-                  `Cette sous-catégorie est utilisée par ${linkedCount} produit(s) et aucune autre sous-catégorie n'existe dans la même catégorie.\n` +
-                  `Les produits seront détachés (sub_category_id = null). Continuer ?`
-               );
-               if (!proceed) return;
-            }
-
+            const replacementId = deleteSubCatReplacement || null;
             const { error: reassignErr } = await supabase
                .from('products')
-               .update({ sub_category_id: replacementSubId })
-               .eq('sub_category_id', id);
-            if (reassignErr) {
-               alert("Erreur: " + reassignErr.message);
-               return;
-            }
+               .update({ sub_category_id: replacementId })
+               .eq('sub_category_id', deleteSubCatTarget.id);
+            if (reassignErr) { setDeleteSubCatError(reassignErr.message); return; }
          }
 
-         // 4) Supprimer la sous-catégorie
-         const { error } = await supabase.from('sub_categories').delete().eq('id', id);
-         if (error) {
-            alert("Erreur: " + error.message);
-            return;
-         }
+         const { error } = await supabase.from('sub_categories').delete().eq('id', deleteSubCatTarget.id);
+         if (error) { setDeleteSubCatError(error.message); return; }
 
-         if (linkedCount > 0) {
-            alert(`Sous-catégorie supprimée. ${linkedCount} produit(s) ont été réaffecté(s) / détaché(s).`);
-         }
+         setShowDeleteSubCatModal(false);
+         setDeleteSubCatTarget(null);
+         setDeleteSubCatLinkedCount(0);
+         setDeleteSubCatChoices([]);
+         setDeleteSubCatReplacement('');
+         setDeleteSubCatError(null);
          onBack();
       } catch {
-         alert("Erreur lors de la suppression de la sous-catégorie.");
+         setDeleteSubCatError('Erreur lors de la suppression.');
+      } finally {
+         setDeleteSubCatLoading(false);
       }
    };
 
@@ -4070,18 +4074,22 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
 
 
 
-   const handleDeleteCategory = async (id: string) => {
-      if (!confirm("Supprimer cette catégorie ? Les sous-catégories liées seront supprimées aussi.")) return;
+   const handleDeleteCategory = (id: string) => {
+      const cat = filteredCategories.find((c: any) => c.id === id);
+      setDeleteCategoryTarget({ id, name_fr: (cat as any)?.name_fr || id });
+      setShowDeleteCategoryModal(true);
+   };
+
+   const confirmDeleteCategory = async () => {
+      if (!deleteCategoryTarget || deleteCategoryLoading) return;
+      setDeleteCategoryLoading(true);
       try {
          // Sécuriser les FK produits -> sous-catégories de cette catégorie
          const { data: subRows, error: subErr } = await supabase
             .from('sub_categories')
             .select('id')
-            .eq('category_id', id);
-         if (subErr) {
-            alert("Erreur: " + subErr.message);
-            return;
-         }
+            .eq('category_id', deleteCategoryTarget.id);
+         if (subErr) throw new Error(subErr.message);
 
          const subIds = (subRows || []).map((r: any) => r.id).filter(Boolean);
          if (subIds.length > 0) {
@@ -4089,18 +4097,19 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
                .from('products')
                .update({ sub_category_id: null })
                .in('sub_category_id', subIds);
-            if (detachErr) {
-               alert("Erreur: " + detachErr.message);
-               return;
-            }
+            if (detachErr) throw new Error(detachErr.message);
          }
 
-         // Un seul DELETE : le trigger serveur supprime ensuite les sub_categories
-         const { error } = await supabase.from('categories').delete().eq('id', id);
-         if (error) alert("Erreur: " + error.message);
-         else fetchData();
+         const { error } = await supabase.from('categories').delete().eq('id', deleteCategoryTarget.id);
+         if (error) throw new Error(error.message);
+
+         setShowDeleteCategoryModal(false);
+         setDeleteCategoryTarget(null);
+         fetchData();
       } catch (err: any) {
          alert("Erreur suppression catégorie: " + (err?.message || 'Inconnue'));
+      } finally {
+         setDeleteCategoryLoading(false);
       }
    };
 
@@ -11513,9 +11522,229 @@ ${itemsText}
             )
          }
 
+         {/* ╔══════════════════════════════════════════════════════╗ */}
+         {/* ║  MODAL — CONFIRMER SUPPRESSION CATÉGORIE            ║ */}
+         {/* ╚══════════════════════════════════════════════════════╝ */}
+         {showDeleteCategoryModal && deleteCategoryTarget && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+               <div
+                  className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+                  onClick={() => { if (!deleteCategoryLoading) { setShowDeleteCategoryModal(false); setDeleteCategoryTarget(null); } }}
+               />
+               <div className="relative bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                  {/* Header rouge */}
+                  <div className="bg-gradient-to-br from-red-500 to-red-600 p-8 text-white">
+                     <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mb-5">
+                        <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+                        </svg>
+                     </div>
+                     <h3 className="text-2xl font-black uppercase tracking-tight">Supprimer la catégorie</h3>
+                     <p className="text-red-100 text-sm font-semibold mt-1">Cette action est irréversible</p>
+                  </div>
+
+                  {/* Corps */}
+                  <div className="p-8 space-y-5">
+                     <div className="bg-red-50 border border-red-100 rounded-2xl p-5 space-y-2">
+                        <p className="text-sm font-black text-slate-800">
+                           Vous allez supprimer : <span className="text-red-600">"{deleteCategoryTarget.name_fr}"</span>
+                        </p>
+                        <ul className="text-xs text-slate-500 space-y-1 mt-2">
+                           <li className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                              Toutes les sous-catégories liées seront supprimées
+                           </li>
+                           <li className="flex items-center gap-2">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                              Les produits liés seront détachés de ces sous-catégories
+                           </li>
+                        </ul>
+                     </div>
+
+                     <div className="flex gap-3">
+                        <button
+                           type="button"
+                           onClick={() => { setShowDeleteCategoryModal(false); setDeleteCategoryTarget(null); }}
+                           disabled={deleteCategoryLoading}
+                           className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-700 font-black text-sm uppercase tracking-wider hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                           Annuler
+                        </button>
+                        <button
+                           type="button"
+                           onClick={confirmDeleteCategory}
+                           disabled={deleteCategoryLoading}
+                           className="flex-1 py-3.5 rounded-2xl bg-red-600 text-white font-black text-sm uppercase tracking-wider hover:bg-red-700 transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
+                        >
+                           {deleteCategoryLoading ? (
+                              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Suppression...</>
+                           ) : (
+                              <><svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>Oui, supprimer</>
+                           )}
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* ╔══════════════════════════════════════════════════════╗ */}
+         {/* ║  MODAL — SUPPRESSION SOUS-CATÉGORIE + RÉAFFECTATION ║ */}
+         {/* ╚══════════════════════════════════════════════════════╝ */}
+         {showDeleteSubCatModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+               <div
+                  className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+                  onClick={() => { if (!deleteSubCatLoading) { setShowDeleteSubCatModal(false); setDeleteSubCatTarget(null); setDeleteSubCatError(null); } }}
+               />
+               <div className="relative bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                  {/* Header */}
+                  <div className={`p-8 text-white ${deleteSubCatLinkedCount > 0 ? 'bg-gradient-to-br from-amber-500 to-orange-600' : 'bg-gradient-to-br from-red-500 to-red-600'}`}>
+                     <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center mb-5">
+                        {deleteSubCatLinkedCount > 0 ? (
+                           <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+                           </svg>
+                        ) : (
+                           <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                           </svg>
+                        )}
+                     </div>
+                     <h3 className="text-2xl font-black uppercase tracking-tight">
+                        {deleteSubCatLinkedCount > 0 ? 'Réaffecter & Supprimer' : 'Supprimer la sous-catégorie'}
+                     </h3>
+                     {deleteSubCatTarget && (
+                        <p className="text-white/80 text-sm font-semibold mt-1">"{deleteSubCatTarget.name}"</p>
+                     )}
+                  </div>
+
+                  {/* Corps */}
+                  <div className="p-8 space-y-5">
+                     {deleteSubCatError && (
+                        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700 font-bold flex items-center gap-3">
+                           <svg className="flex-shrink-0" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                           </svg>
+                           {deleteSubCatError}
+                        </div>
+                     )}
+
+                     {deleteSubCatLinkedCount > 0 ? (
+                        <div className="space-y-4">
+                           <div className="bg-amber-50 border border-amber-100 rounded-2xl p-5">
+                              <p className="text-sm font-black text-slate-800">
+                                 <span className="text-amber-600">{deleteSubCatLinkedCount} produit{deleteSubCatLinkedCount > 1 ? 's' : ''}</span> utilise{deleteSubCatLinkedCount === 1 ? '' : 'nt'} cette sous-catégorie.
+                              </p>
+                              <p className="text-xs text-slate-500 mt-1">Choisissez où réaffecter ces produits :</p>
+                           </div>
+
+                           {deleteSubCatChoices.length > 0 ? (
+                              <div className="space-y-2">
+                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Sous-catégorie de remplacement</label>
+                                 <select
+                                    value={deleteSubCatReplacement}
+                                    onChange={e => setDeleteSubCatReplacement(e.target.value)}
+                                    className="w-full bg-slate-50 border-2 border-slate-200 focus:border-orange-500 outline-none rounded-2xl py-3.5 px-5 font-bold text-sm transition-all"
+                                 >
+                                    <option value="">— Détacher les produits (aucune catégorie) —</option>
+                                    {deleteSubCatChoices.map(c => (
+                                       <option key={c.id} value={c.id}>{c.name}</option>
+                                    ))}
+                                 </select>
+                                 {!deleteSubCatReplacement && (
+                                    <p className="text-[10px] text-amber-600 font-bold px-1">⚠ Les produits seront détachés sans sous-catégorie</p>
+                                 )}
+                              </div>
+                           ) : (
+                              <div className="bg-slate-50 rounded-2xl p-4 text-sm text-slate-500 font-bold text-center">
+                                 Aucune autre sous-catégorie disponible — les produits seront détachés.
+                              </div>
+                           )}
+                        </div>
+                     ) : (
+                        <div className="bg-red-50 border border-red-100 rounded-2xl p-5">
+                           <p className="text-sm font-bold text-slate-600">
+                              Aucun produit lié. Cette sous-catégorie sera supprimée définitivement.
+                           </p>
+                        </div>
+                     )}
+
+                     <div className="flex gap-3 pt-1">
+                        <button
+                           type="button"
+                           onClick={() => { setShowDeleteSubCatModal(false); setDeleteSubCatTarget(null); setDeleteSubCatError(null); }}
+                           disabled={deleteSubCatLoading}
+                           className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-700 font-black text-sm uppercase tracking-wider hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
+                        >
+                           Annuler
+                        </button>
+                        <button
+                           type="button"
+                           onClick={confirmDeleteSubCategory}
+                           disabled={deleteSubCatLoading}
+                           className={`flex-1 py-3.5 rounded-2xl text-white font-black text-sm uppercase tracking-wider transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2 ${deleteSubCatLinkedCount > 0 ? 'bg-orange-600 hover:bg-orange-700' : 'bg-red-600 hover:bg-red-700'}`}
+                        >
+                           {deleteSubCatLoading ? (
+                              <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Traitement...</>
+                           ) : (
+                              deleteSubCatLinkedCount > 0 ? 'Réaffecter & Supprimer' : 'Supprimer'
+                           )}
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* ╔══════════════════════════════════════════════════════╗ */}
+         {/* ║  MODAL — SUPPRESSION STORE SOUS-CATÉGORIE           ║ */}
+         {/* ╚══════════════════════════════════════════════════════╝ */}
+         {showDeleteStoreSubCatModal && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+               <div
+                  className="absolute inset-0 bg-slate-900/70 backdrop-blur-sm"
+                  onClick={() => { setShowDeleteStoreSubCatModal(false); setDeleteStoreSubCatId(null); }}
+               />
+               <div className="relative bg-white w-full max-w-sm rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+                  <div className="bg-gradient-to-br from-rose-500 to-red-600 p-8 text-white">
+                     <div className="w-12 h-12 bg-white/20 rounded-2xl flex items-center justify-center mb-4">
+                        <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                        </svg>
+                     </div>
+                     <h3 className="text-xl font-black uppercase">Supprimer l'onglet</h3>
+                     {deleteStoreSubCatName && <p className="text-white/80 text-sm font-semibold mt-1">"{deleteStoreSubCatName}"</p>}
+                  </div>
+                  <div className="p-8 space-y-5">
+                     <p className="text-sm text-slate-600 font-bold">
+                        Les produits liés à cet onglet seront dissociés mais pas supprimés.
+                     </p>
+                     <div className="flex gap-3">
+                        <button
+                           type="button"
+                           onClick={() => { setShowDeleteStoreSubCatModal(false); setDeleteStoreSubCatId(null); }}
+                           className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-700 font-black text-sm uppercase tracking-wider hover:bg-slate-200 transition-all active:scale-95"
+                        >
+                           Annuler
+                        </button>
+                        <button
+                           type="button"
+                           onClick={confirmDeleteStoreSubCategory}
+                           className="flex-1 py-3.5 rounded-2xl bg-red-600 text-white font-black text-sm uppercase tracking-wider hover:bg-red-700 transition-all active:scale-95"
+                        >
+                           Supprimer
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            </div>
+         )}
+
          {/* MODAL MANAGE SUB-CATEGORIES */}
          {
             showAddSubCategory && editingCategory && (
+
                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
                   <div className="absolute inset-0 bg-slate-900/60" onClick={() => { setShowAddSubCategory(false); setEditingCategory(null); }}></div>
                   <div className="relative bg-white w-full max-w-lg rounded-[3rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
