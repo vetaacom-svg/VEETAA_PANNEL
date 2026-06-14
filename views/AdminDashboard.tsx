@@ -50,7 +50,7 @@ import AdminBroadcastMailPanel from './admin/panels/AdminBroadcastMailPanel';
 
 /** Référence stable : évite `{}` par défaut dans les props qui recréait un objet à chaque rendu (useMemo inutilement invalidé). */
 const EMPTY_ADMIN_PERMISSIONS: Record<string, boolean> = {};
-import { UserActiveIcon as UserActiveMarkerIcon, UserIdleIcon as UserIdleMarkerIcon, DriverBusyIcon as DriverBusyMarkerIcon, DriverIdleIcon as DriverIdleMarkerIcon, StoreIcon as StoreMarkerIcon } from '../map/components/MarkerIcons';
+import { UserActiveIcon as UserActiveMarkerIcon, UserIdleIcon as UserIdleMarkerIcon, DriverBusyIcon as DriverBusyMarkerIcon, DriverIdleIcon as DriverIdleMarkerIcon, StoreIcon as StoreMarkerIcon, ClientMarkerIcon, DriverDeliveryIcon } from '../map/components/MarkerIcons';
 
 // Lightweight, memoized product card to avoid re-renders while scrolling
 type ProductCardProps = {
@@ -1621,6 +1621,84 @@ const MapComponent: React.FC<{
    const activeStoreId = (selectedOrder as any)?.storeId || (selectedOrder as any)?.store_id;
    const activeStore = selectedOrder ? stores.find(s => String(s.id) === String(activeStoreId)) : null;
 
+   // ── OSRM ITINÉRAIRE TEMPS RÉEL ─────────────────────────────────────────────
+   // Statuts où le livreur va encore au magasin (phase d'approche)
+   const APPROACHING_STATUSES_MAP = new Set(['pending', 'accepted', 'confirmed', 'preparing', 'treatment', 'verification']);
+
+   const [osrmActiveRoute, setOsrmActiveRoute] = useState<[number,number][] | null>(null);
+   const [osrmRemainingRoute, setOsrmRemainingRoute] = useState<[number,number][] | null>(null);
+   const osrmFetchRef = useRef<AbortController | null>(null);
+
+   const fetchOsrmSegment = useCallback(async (from: [number,number], to: [number,number], signal?: AbortSignal): Promise<[number,number][] | null> => {
+      try {
+         const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`;
+         const res = await fetch(url, { signal });
+         if (!res.ok) return null;
+         const data = await res.json();
+         const coords = data?.routes?.[0]?.geometry?.coordinates;
+         if (!coords) return null;
+         return (coords as [number,number][]).map(([lng, lat]) => [lat, lng] as [number,number]);
+      } catch {
+         return null;
+      }
+   }, []);
+
+   useEffect(() => {
+      // Annule tout appel précédent
+      if (osrmFetchRef.current) osrmFetchRef.current.abort();
+      const controller = new AbortController();
+      osrmFetchRef.current = controller;
+
+      setOsrmActiveRoute(null);
+      setOsrmRemainingRoute(null);
+
+      if (!selectedOrder) return;
+
+      const clientPos: [number,number] | null = selectedOrder.location
+         ? [selectedOrder.location.lat, selectedOrder.location.lng]
+         : null;
+      if (!clientPos) return;
+
+      const assignedDriver = selectedOrder.assignedDriverId
+         ? drivers.find(d => d.id === selectedOrder.assignedDriverId)
+         : null;
+
+      const dLat = assignedDriver?.lastLat ?? assignedDriver?.last_lat ?? assignedDriver?.latitude;
+      const dLng = assignedDriver?.lastLng ?? assignedDriver?.last_lng ?? assignedDriver?.longitude;
+      const driverPos: [number,number] | null = (dLat != null && dLng != null && Number(dLat) !== 0 && Number(dLng) !== 0 && !isNaN(Number(dLat)) && !isNaN(Number(dLng))) ? [Number(dLat), Number(dLng)] : null;
+
+      const storeCoords = activeStore ? getStoreLatLngForMap(activeStore) : null;
+
+      (async () => {
+         try {
+            if (!driverPos) {
+               // Pas de livreur → trajet de base Magasin→Client
+               if (storeCoords) {
+                  const r = await fetchOsrmSegment(storeCoords, clientPos, controller.signal);
+                  if (!controller.signal.aborted) setOsrmActiveRoute(r);
+               }
+               return;
+            }
+
+            // Si livreur présent → trajet direct Livreur → Client (Lieu de livraison)
+            const r = await fetchOsrmSegment(driverPos, clientPos, controller.signal);
+            if (!controller.signal.aborted) {
+               setOsrmActiveRoute(r);
+               setOsrmRemainingRoute(null);
+            }
+         } catch { /* AbortError silencieux */ }
+      })();
+
+      return () => { controller.abort(); };
+   }, [
+      selectedOrderId,
+      selectedOrder?.status,
+      selectedOrder?.assignedDriverId,
+      selectedOrder?.location?.lat,
+      selectedOrder?.location?.lng,
+      activeStore?.id,
+   ]);
+
    // Icône personnalisée pour chaque store (image réelle si dispo, sinon avatar SVG généré)
    /** Bordure orange = magasin « produits » lié à la commande sélectionnée ; gris = autre magasin catalogue. */
    const createStoreIcon = (store: Store, linkedToSelected = false) => {
@@ -1714,10 +1792,15 @@ const MapComponent: React.FC<{
 
    const activeOrdersArray = useMemo(() => {
       let arr = orders.filter(o => o.status !== 'delivered' && !o.isArchived);
-      if (mapOrdersFilter === 'unassigned') arr = arr.filter(o => !o.assignedDriverId);
-      if (mapOrdersFilter === 'incidents') arr = arr.filter(o => o.status === 'refused' || o.status === 'unavailable');
+      if (mapOrdersFilter === 'unassigned') {
+         arr = arr.filter(o => !o.assignedDriverId || String(o.id) === String(selectedOrderId));
+      }
+      if (mapOrdersFilter === 'incidents') {
+         arr = arr.filter(o => o.status === 'refused' || o.status === 'unavailable' || String(o.id) === String(selectedOrderId));
+      }
       if (mapsZoneFilter) {
          arr = arr.filter(o => {
+            if (String(o.id) === String(selectedOrderId)) return true;
             const store = stores.find(s => String(s.id) === String(o.storeId || (o as any).store_id));
             return store && store.zone_id === mapsZoneFilter;
          });
@@ -1779,19 +1862,7 @@ const MapComponent: React.FC<{
 
    return (
       <div className="w-full h-full relative bg-slate-50">
-         <svg style={{ position: 'absolute', width: 0, height: 0 }}>
-            <filter id="street-darkener-admin">
-               <feComponentTransfer>
-                  <feFuncR type="gamma" exponent="1.8" amplitude="0.7" />
-                  <feFuncG type="gamma" exponent="1.8" amplitude="0.7" />
-                  <feFuncB type="gamma" exponent="1.8" amplitude="0.7" />
-               </feComponentTransfer>
-            </filter>
-         </svg>
          <style>{`
-             .leaflet-tile {
-                filter: brightness(0.92) contrast(1.1) saturate(1.1) !important;
-             }
              .leaflet-container {
                 background: #ffffff !important;
              }
@@ -1801,6 +1872,12 @@ const MapComponent: React.FC<{
              }
              .leaflet-control-attribution {
                 display: none !important;
+             }
+             @keyframes veetaa-dash-move {
+                to { stroke-dashoffset: -80; }
+             }
+             .veetaa-osrm-active {
+                animation: veetaa-dash-move 1.5s linear infinite;
              }
           `}</style>
          <MapContainer
@@ -1818,11 +1895,36 @@ const MapComponent: React.FC<{
             {onMapClick && <MapEventsHandler onMapClick={onMapClick} />}
             <RecenterController trigger={triggerRecenter} />
             <TileLayer
-               url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            {/* Client → magasins « produits » (commande sélectionnée dans le bandeau) */}
-            {selectedOrder && (() => {
+            {/* ── ITINÉRAIRE OSRM ACTIF (bleu épais animé) ── */}
+            {osrmActiveRoute && osrmActiveRoute.length > 1 && (
+               <>
+                  {/* Ombre portée */}
+                  <Polyline
+                     positions={osrmActiveRoute}
+                     pathOptions={{ color: 'rgba(37,99,235,0.22)', weight: 10, lineCap: 'round', lineJoin: 'round' }}
+                  />
+                  {/* Trait principal bleu avec tirets */}
+                  <Polyline
+                     positions={osrmActiveRoute}
+                     pathOptions={{ color: '#3b82f6', weight: 5, dashArray: '12, 8', lineCap: 'round', lineJoin: 'round', className: 'veetaa-osrm-active' }}
+                  />
+               </>
+            )}
+
+            {/* ── ITINÉRAIRE RESTANT (pointillés gris fins) ── */}
+            {osrmRemainingRoute && osrmRemainingRoute.length > 1 && (
+               <Polyline
+                  positions={osrmRemainingRoute}
+                  pathOptions={{ color: '#94a3b8', weight: 3, dashArray: '4, 6', lineCap: 'round', lineJoin: 'round', opacity: 0.75 }}
+               />
+            )}
+
+            {/* ── FALLBACK (trait orange si OSRM pas encore chargé) ── */}
+            {!osrmActiveRoute && selectedOrder && (() => {
                const cust = orderCustomerPosForMaps(selectedOrder);
                if (!cust) return null;
                return logisticsStoresForSelected.map((s, idx) => {
@@ -1832,7 +1934,7 @@ const MapComponent: React.FC<{
                      <Polyline
                         key={`maps-traj-${s.id}-${idx}`}
                         positions={[cust, c]}
-                        pathOptions={{ color: '#FF7A00', weight: 3, dashArray: '6, 8', opacity: 0.9 }}
+                        pathOptions={{ color: '#FF7A00', weight: 2, dashArray: '5, 8', opacity: 0.5 }}
                      />
                   );
                });
@@ -1893,7 +1995,7 @@ const MapComponent: React.FC<{
                         <Marker
                            key={`order-${order.id}`}
                            position={pos}
-                           icon={OrderDestinationIcon}
+                           icon={isSelected ? ClientMarkerIcon : OrderDestinationIcon}
                            zIndexOffset={isSelected ? 1000 : 0}
                            eventHandlers={
                               onSelectOrder
@@ -2002,7 +2104,7 @@ const MapComponent: React.FC<{
             )}
 
             {/* LIVREURS */}
-            {mapLayers.drivers && drivers.filter(d => !mapsZoneFilter || d.zone_id === mapsZoneFilter).map(driver => {
+            {mapLayers.drivers && drivers.filter(d => !mapsZoneFilter || d.zone_id === mapsZoneFilter || (selectedOrder && d.id === selectedOrder.assignedDriverId)).map(driver => {
                const lat = driver.lastLat ?? driver.last_lat ?? driver.latitude ?? (driver as any).x;
                const lng = driver.lastLng ?? driver.last_lng ?? driver.longitude ?? (driver as any).y;
                if (!lat || !lng) return null;
@@ -2020,7 +2122,7 @@ const MapComponent: React.FC<{
                   <Marker
                      key={driver.id}
                      position={[Number(lat), Number(lng)]}
-                     icon={createDriverIcon(driver, activeOrder, highlightAssigned)}
+                     icon={highlightAssigned ? DriverDeliveryIcon : createDriverIcon(driver, activeOrder, highlightAssigned)}
                      zIndexOffset={highlightAssigned ? 2200 : isBusy ? 500 : isOffline ? -100 : 100}
                   >
                      <Popup autoPan={false}>
