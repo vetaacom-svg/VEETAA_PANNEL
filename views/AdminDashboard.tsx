@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMap, useMapEvents } from 'react-leaflet';
@@ -547,6 +547,7 @@ function haversineKm(a: [number, number], b: [number, number]): number {
 
 type MapsListSort = 'urgency' | 'oldest' | 'newest' | 'distance';
 type MapsOrderFilter = 'all' | 'unassigned' | 'incidents';
+type MapsZoneFilter = string | null;
 
 /** Statuts « en attente » : utilisé pour le tri urgence liste Maps et le compteur temps d’attente commandes. */
 const ORDER_WAITING_STATUSES = new Set<OrderStatus>(['pending', 'verification']);
@@ -668,12 +669,145 @@ const OrderWaitingTimeCell: React.FC<{ order: Order }> = ({ order }) => {
    );
 };
 
+const getDriverCoords = (d: Driver): [number, number] | null => {
+   const lat = d.lastLat ?? d.last_lat ?? d.latitude;
+   const lng = d.lastLng ?? d.last_lng ?? d.longitude;
+   if (lat != null && lng != null) {
+      const la = Number(lat);
+      const lo = Number(lng);
+      if (!Number.isNaN(la) && !Number.isNaN(lo)) return [la, lo];
+   }
+   return null;
+};
+
+const MapSidebarOrderCard: React.FC<{
+   order: Order;
+   selectedOrderId: string | null;
+   onSelectOrder: (id: string | null) => void;
+   onUpdateOrderStatus?: (orderId: string, status: OrderStatus) => void;
+   handleCopy: (e: React.MouseEvent, text: string) => void;
+}> = ({ order, selectedOrderId, onSelectOrder, onUpdateOrderStatus, handleCopy }) => {
+   const [, setTick] = useState(0);
+   const isWaiting = ORDER_WAITING_STATUSES.has(order.status);
+   
+   useEffect(() => {
+      if (!isWaiting) return;
+      const interval = setInterval(() => {
+         setTick(t => t + 1);
+      }, 5000);
+      return () => clearInterval(interval);
+   }, [isWaiting]);
+
+   const waitMs = Date.now() - order.timestamp;
+   const waitMins = Math.floor(waitMs / 60000);
+   const isUnassigned = !order.assignedDriverId;
+
+   let timerColor = 'text-slate-500 bg-slate-100';
+   let blinkingBorder = '';
+   if (isWaiting && isUnassigned) {
+      if (waitMins >= 15) {
+         timerColor = 'bg-red-600 text-white animate-pulse font-extrabold shadow-sm';
+         blinkingBorder = 'border-red-500 shadow-[0_0_8px_rgba(239,68,68,0.4)]';
+      } else if (waitMins >= 5) {
+         timerColor = 'bg-orange-500 text-white font-bold';
+         blinkingBorder = 'border-orange-300';
+      }
+   }
+
+   const formattedTime = waitMins >= 60 
+      ? `${Math.floor(waitMins / 60)}h ${waitMins % 60}m` 
+      : `${waitMins}m`;
+
+   const isSelected = String(selectedOrderId) === String(order.id);
+
+   return (
+      <div
+         onClick={() => onSelectOrder(isSelected ? null : order.id)}
+         className={`shrink-0 w-[200px] sm:w-[220px] rounded-xl border-2 p-2.5 cursor-pointer transition-all shadow-sm flex flex-col justify-between ${
+            isSelected 
+               ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-500/30' 
+               : blinkingBorder || 'border-slate-100 bg-white hover:border-slate-200'
+         }`}
+      >
+         <div>
+            <div className="flex justify-between items-start gap-1">
+               <span className="text-[10px] font-mono font-bold text-slate-400">#{order.id.slice(-6)}</span>
+               <div className="flex items-center gap-1">
+                  {isWaiting && (
+                     <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black ${timerColor}`}>
+                        ⏱️ {formattedTime}
+                     </span>
+                  )}
+                  <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black shrink-0 ${order.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>{order.status}</span>
+               </div>
+            </div>
+            <p className="text-[11px] font-bold text-slate-800 truncate mt-1" title={getOrderStoreDisplay(order)}>{getOrderStoreDisplay(order)}</p>
+            <p className="text-[9px] text-slate-600 truncate font-bold">{order.customerName}</p>
+            <p className="text-[8px] text-slate-400 font-bold mt-0.5">{orderMapLineItemsCount(order)} art. · {orderMapTotalDisplay(order)}</p>
+         </div>
+
+         <div className="mt-1.5 pt-1.5 border-t border-slate-100 flex flex-col gap-1">
+            <div className="flex justify-between items-center">
+               {order.phone ? (
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleCopy(e, order.phone); }} className="text-[8px] font-bold text-orange-600 hover:underline">Copier tél.</button>
+               ) : <span />}
+            </div>
+            
+            {onUpdateOrderStatus && (
+               <div className="flex gap-1 mt-1">
+                  {order.status === 'pending' && (
+                     <button
+                        type="button"
+                        onClick={(e) => {
+                           e.stopPropagation();
+                           onUpdateOrderStatus(order.id, 'confirmed');
+                        }}
+                        className="flex-1 py-1 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 text-[8px] font-black uppercase text-center transition-colors"
+                     >
+                        ✓ Confirmer
+                     </button>
+                  )}
+                  {order.status === 'confirmed' && (
+                     <button
+                        type="button"
+                        onClick={(e) => {
+                           e.stopPropagation();
+                           onUpdateOrderStatus(order.id, 'delivering');
+                        }}
+                        className="flex-1 py-1 rounded bg-orange-100 text-orange-700 hover:bg-orange-200 text-[8px] font-black uppercase text-center transition-colors"
+                     >
+                        🚀 En Livraison
+                     </button>
+                  )}
+                  {order.status === 'delivering' && (
+                     <button
+                        type="button"
+                        onClick={(e) => {
+                           e.stopPropagation();
+                           onUpdateOrderStatus(order.id, 'delivered');
+                        }}
+                        className="flex-1 py-1 rounded bg-green-100 text-green-700 hover:bg-green-200 text-[8px] font-black uppercase text-center transition-colors"
+                     >
+                        ✅ Livré
+                     </button>
+                  )}
+               </div>
+            )}
+         </div>
+      </div>
+   );
+};
+
 // Bandeau cartographie (commandes + admin magasins) au-dessus de la carte live
 const LogisticsSidebar: React.FC<{
    orders: Order[],
    users: UserProfile[],
    stores: Store[],
    drivers: Driver[],
+   deliveryZones: DeliveryZone[],
+   mapsZoneFilter: MapsZoneFilter,
+   onMapsZoneFilterChange: (v: MapsZoneFilter) => void,
+   onFlyToCoords?: (lat: number, lng: number) => void,
    selectedOrderId: string | null,
    onSelectOrder: (id: string | null) => void,
    onViewOrder: (id: string) => void,
@@ -698,16 +832,22 @@ const LogisticsSidebar: React.FC<{
    mapLayers: { orders: boolean; stores: boolean; drivers: boolean },
    setMapLayers: React.Dispatch<React.SetStateAction<{ orders: boolean; stores: boolean; drivers: boolean }>>,
    darkModeIsOrders?: boolean,
-}> = ({ orders, users, stores, drivers, selectedOrderId, onSelectOrder, onViewOrder, pickingStore, onStartPicking, onCancelPicking, onSavePicking, onPosChange, pickingPos, onRecenter, onAssignDriver, mapsOrderFilter, setMapsOrderFilter, mapsListSort, setMapsListSort, mapsSearchQuery, setMapsSearchQuery, onMapsSearchGo, onUpdateOrderStatus, mapsBandCollapsed, onMapsBandCollapsedChange, mapLayers, setMapLayers, darkModeIsOrders = false }) => {
-   const [sidebarTab, setSidebarTab] = useState<'orders' | 'admin'>('orders');
+}> = ({ orders, users, stores, drivers, deliveryZones, mapsZoneFilter, onMapsZoneFilterChange, onFlyToCoords, selectedOrderId, onSelectOrder, onViewOrder, pickingStore, onStartPicking, onCancelPicking, onSavePicking, onPosChange, pickingPos, onRecenter, onAssignDriver, mapsOrderFilter, setMapsOrderFilter, mapsListSort, setMapsListSort, mapsSearchQuery, setMapsSearchQuery, onMapsSearchGo, onUpdateOrderStatus, mapsBandCollapsed, onMapsBandCollapsedChange, mapLayers, setMapLayers, darkModeIsOrders = false }) => {
+   const [sidebarTab, setSidebarTab] = useState<'orders' | 'drivers' | 'admin'>('orders');
    const orderCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
    const filteredOrdersBase = useMemo(() => {
       let list = orders.filter(o => o.status !== 'delivered' && !o.isArchived);
       if (mapsOrderFilter === 'unassigned') list = list.filter(o => !o.assignedDriverId);
       if (mapsOrderFilter === 'incidents') list = list.filter(o => o.status === 'refused' || o.status === 'unavailable');
+      if (mapsZoneFilter) {
+         list = list.filter(o => {
+            const store = stores.find(s => String(s.id) === String(o.storeId || (o as any).store_id));
+            return store && store.zone_id === mapsZoneFilter;
+         });
+      }
       return list;
-   }, [orders, mapsOrderFilter]);
+   }, [orders, mapsOrderFilter, mapsZoneFilter, stores]);
 
    const activeOrders = useMemo(
       () => sortMapSidebarOrders(filteredOrdersBase, mapsListSort, MAPS_DEPOT_CENTER),
@@ -738,6 +878,7 @@ const LogisticsSidebar: React.FC<{
             <h1 className="text-sm sm:text-base font-black tracking-tight text-white shrink-0">Carte live</h1>
             <div className="flex bg-slate-800 p-0.5 rounded-lg shrink-0">
                <button type="button" onClick={() => setSidebarTab('orders')} className={`px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase rounded-md transition-colors ${sidebarTab === 'orders' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white'}`}>Commandes</button>
+               <button type="button" onClick={() => setSidebarTab('drivers')} className={`px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase rounded-md transition-colors ${sidebarTab === 'drivers' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white'}`}>Livreurs</button>
                <button type="button" onClick={() => setSidebarTab('admin')} className={`px-3 py-1.5 text-[10px] sm:text-xs font-black uppercase rounded-md transition-colors ${sidebarTab === 'admin' ? 'bg-white text-slate-900' : 'text-slate-400 hover:text-white'}`}>Admin magasins</button>
             </div>
             <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 rounded-lg bg-slate-800/80 px-1.5 py-1 border border-slate-700/80" title="Affichage sur la carte">
@@ -787,6 +928,20 @@ const LogisticsSidebar: React.FC<{
                   <>
                      <div className="flex flex-wrap items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100">
                         <span className="text-[9px] font-black uppercase text-slate-400 shrink-0">En direct</span>
+                        
+                        {/* Sélecteur Ville */}
+                        <select
+                           value={mapsZoneFilter ?? ''}
+                           onChange={e => onMapsZoneFilterChange(e.target.value || null)}
+                           className="text-[10px] font-bold border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700 outline-none cursor-pointer"
+                           title="Filtrer par ville"
+                        >
+                           <option value="">🌍 Toutes les villes</option>
+                           {deliveryZones.map(z => (
+                              <option key={z.id} value={z.id}>📍 {z.name}</option>
+                           ))}
+                        </select>
+
                         <select value={mapsListSort} onChange={(e) => setMapsListSort(e.target.value as MapsListSort)} className="text-[10px] font-bold border border-slate-200 rounded-lg px-2 py-1 bg-white text-slate-700" title="Tri">
                            <option value="urgency">Urgence</option>
                            <option value="oldest">Plus anciennes</option>
@@ -814,19 +969,15 @@ const LogisticsSidebar: React.FC<{
                            <div
                               key={order.id}
                               ref={(el) => { orderCardRefs.current[String(order.id)] = el; }}
-                              onClick={() => onSelectOrder(String(selectedOrderId) === String(order.id) ? null : order.id)}
-                              className={`shrink-0 w-[200px] sm:w-[220px] rounded-xl border-2 p-2.5 cursor-pointer transition-all shadow-sm ${String(selectedOrderId) === String(order.id) ? 'border-orange-500 bg-orange-50 ring-2 ring-orange-500/30' : 'border-slate-100 bg-white hover:border-slate-200'}`}
+                              className="shrink-0"
                            >
-                              <div className="flex justify-between items-start gap-1">
-                                 <span className="text-[10px] font-mono font-bold text-slate-400">#{order.id.slice(-6)}</span>
-                                 <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black shrink-0 ${order.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-600'}`}>{order.status}</span>
-                              </div>
-                              <p className="text-[11px] font-bold text-slate-800 truncate mt-1" title={getOrderStoreDisplay(order)}>{getOrderStoreDisplay(order)}</p>
-                              <p className="text-[9px] text-slate-600 truncate font-bold">{order.customerName}</p>
-                              <p className="text-[8px] text-slate-400 font-bold mt-0.5">{orderMapLineItemsCount(order)} art. · {orderMapTotalDisplay(order)}</p>
-                              {order.phone && (
-                                 <button type="button" onClick={(e) => { e.stopPropagation(); handleCopy(e, order.phone); }} className="mt-1 text-[8px] font-bold text-orange-600 hover:underline">Copier tél.</button>
-                              )}
+                              <MapSidebarOrderCard
+                                 order={order}
+                                 selectedOrderId={selectedOrderId}
+                                 onSelectOrder={onSelectOrder}
+                                 onUpdateOrderStatus={onUpdateOrderStatus}
+                                 handleCopy={handleCopy}
+                              />
                            </div>
                         ))}
                      </div>
@@ -992,10 +1143,166 @@ const LogisticsSidebar: React.FC<{
                                  </select>
                               </div>
                            </div>
+
+                           {/* Panel d'assignation rapide par distance */}
+                           {onAssignDriver && (() => {
+                              const selectedOrderStore = stores.find(s => String(s.id) === String(selectedOrderFull.storeId || (selectedOrderFull as any).store_id));
+                              const storeCoords = selectedOrderStore ? getStoreLatLngForMap(selectedOrderStore) : null;
+
+                              const driversWithDistance = drivers
+                                 .filter(d => d.is_online || (d as any).is_online)
+                                 .map(d => {
+                                    const coords = getDriverCoords(d);
+                                    const dist = (storeCoords && coords) ? haversineKm(storeCoords, coords) : 1e9;
+                                    return { driver: d, distance: dist };
+                                 })
+                                 .sort((a, b) => a.distance - b.distance);
+
+                              if (driversWithDistance.length === 0) return null;
+
+                              return (
+                                 <div className={`mt-3 p-2.5 rounded-xl border ${darkModeIsOrders ? 'bg-slate-900/60 border-slate-800 text-white' : 'bg-slate-50 border-slate-200 text-slate-800'}`}>
+                                    <label className={`text-[10px] font-black uppercase tracking-tight block mb-2 ${darkModeIsOrders ? 'text-slate-300' : 'text-slate-600'}`}>
+                                       ⚡ Assigner le plus proche (Magasin: {selectedOrderStore?.name || '—'})
+                                    </label>
+                                    <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto pr-1 [scrollbar-width:thin]">
+                                       {driversWithDistance.map(({ driver, distance }, idx) => {
+                                          const isAssigned = selectedOrderFull.assignedDriverId === driver.id;
+                                          const isClosest = distance !== 1e9 && idx === 0;
+                                          const isBusy = driver.status === 'busy' || orders.filter(o => o.status !== 'delivered' && !o.isArchived).some(o => o.assignedDriverId === driver.id);
+                                          
+                                          return (
+                                             <div 
+                                                key={driver.id} 
+                                                className={`flex items-center justify-between p-2 rounded-lg border transition-all text-[11px] font-bold ${
+                                                   isAssigned
+                                                      ? (darkModeIsOrders ? 'bg-orange-950/40 border-orange-500/50' : 'bg-orange-50 border-orange-200')
+                                                      : isClosest
+                                                         ? (darkModeIsOrders ? 'bg-indigo-950/40 border-indigo-500/40 hover:border-indigo-400' : 'bg-indigo-50/50 border-indigo-100 hover:border-indigo-300')
+                                                         : (darkModeIsOrders ? 'bg-slate-950/30 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-100 hover:border-slate-200')
+                                                }`}
+                                             >
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                   <span className={`w-2 h-2 rounded-full shrink-0 ${isBusy ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                                                   <span className="truncate">{driver.full_name || driver.fullName}</span>
+                                                   {isClosest && (
+                                                      <span className="text-[8px] bg-indigo-500 text-white px-1.5 py-0.5 rounded font-black shrink-0 uppercase tracking-wide">Proche</span>
+                                                   )}
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                   <span className="text-[10px] text-slate-500 font-mono">
+                                                      {distance === 1e9 ? 'Non localisé' : `${distance.toFixed(1)} km`}
+                                                   </span>
+                                                   <button
+                                                      type="button"
+                                                      disabled={isAssigned}
+                                                      onClick={() => onAssignDriver(selectedOrderFull.id, driver.id)}
+                                                      className={`px-2 py-1 rounded text-[9px] font-black uppercase transition-all ${
+                                                         isAssigned
+                                                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                            : 'bg-slate-900 text-white hover:bg-orange-600'
+                                                      }`}
+                                                   >
+                                                      {isAssigned ? 'Assigné' : '✓'}
+                                                   </button>
+                                                </div>
+                                             </div>
+                                          );
+                                       })}
+                                    </div>
+                                 </div>
+                              );
+                           })()}
+
                            <button type="button" onClick={() => onViewOrder(selectedOrderFull.id)} className="w-full mt-2 flex items-center justify-center gap-2 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase hover:bg-orange-600"><Eye size={12} /> Fiche commande</button>
                         </div>
                      )}
                   </>
+               )}
+            </>
+         ) : sidebarTab === 'drivers' ? (
+            <>
+               {!mapsBandCollapsed && (
+                  <div className="flex gap-2 overflow-x-auto px-3 py-2 bg-white border-b border-slate-100 [scrollbar-width:thin]">
+                     {(() => {
+                        const sortedDrivers = [...drivers].sort((a, b) => {
+                           const aOnline = a.is_online || (a as any).is_online ? 0 : 1;
+                           const bOnline = b.is_online || (b as any).is_online ? 0 : 1;
+                           return aOnline - bOnline;
+                        });
+                        
+                        if (sortedDrivers.length === 0) {
+                           return <p className="text-xs text-slate-400 py-2 italic w-full text-center">Aucun livreur disponible</p>;
+                        }
+
+                        return sortedDrivers.map(driver => {
+                           const isOnline = driver.is_online || (driver as any).is_online;
+                           const activeOrder = orders.find(o => o.assignedDriverId === driver.id && o.status !== 'delivered');
+                           const isBusy = driver.status === 'busy' || !!activeOrder;
+                           const coords = getDriverCoords(driver);
+                           const zone = deliveryZones.find(z => z.id === driver.zone_id);
+
+                           return (
+                              <div
+                                 key={driver.id}
+                                 className={`shrink-0 w-[200px] sm:w-[220px] rounded-xl border p-2.5 bg-white shadow-sm flex flex-col justify-between ${
+                                    !isOnline ? 'opacity-60 border-slate-100 bg-slate-50' : 'border-slate-100 bg-white hover:border-slate-200'
+                                 }`}
+                              >
+                                 <div>
+                                    <div className="flex justify-between items-start gap-1">
+                                       <div className="flex items-center gap-1.5 min-w-0">
+                                          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${!isOnline ? 'bg-slate-400' : isBusy ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                                          <p className="text-[11px] font-extrabold text-slate-800 truncate leading-tight" title={driver.full_name || driver.fullName}>
+                                             {driver.full_name || driver.fullName}
+                                          </p>
+                                       </div>
+                                       {zone && (
+                                          <span className="text-[8px] bg-slate-100 text-slate-600 px-1 py-0.5 rounded font-black truncate shrink-0">
+                                             📍 {zone.name}
+                                          </span>
+                                       )}
+                                    </div>
+                                    <p className="text-[9px] text-slate-500 mt-1 font-mono">{driver.phone}</p>
+                                    
+                                    {activeOrder ? (
+                                       <div className="mt-2 p-1.5 rounded-lg bg-orange-50 border border-orange-100 text-[9px] text-orange-800">
+                                          <p className="font-black">Cmd #{activeOrder.id.slice(-6)} ({activeOrder.status})</p>
+                                          <p className="text-[8px] truncate font-medium mt-0.5">{getOrderStoreDisplay(activeOrder)}</p>
+                                       </div>
+                                    ) : (
+                                       <p className="text-[9px] text-slate-400 italic mt-2">
+                                          {isOnline ? 'Aucune mission en cours' : 'Hors ligne'}
+                                       </p>
+                                    )}
+                                 </div>
+                                 
+                                 <div className="mt-2.5 pt-2 border-t border-slate-100 flex gap-1.5">
+                                    {coords && onFlyToCoords && isOnline ? (
+                                       <button
+                                          type="button"
+                                          onClick={() => onFlyToCoords(coords[0], coords[1])}
+                                          className="flex-1 py-1 rounded bg-slate-900 text-white hover:bg-orange-600 text-[8px] font-black uppercase text-center transition-colors flex items-center justify-center gap-1"
+                                       >
+                                          <Navigation size={9} /> Localiser
+                                       </button>
+                                    ) : (
+                                       <div className="flex-1 text-[8px] font-bold text-slate-400 flex items-center justify-center">
+                                          Non localisé
+                                       </div>
+                                    )}
+                                    <a
+                                       href={`tel:${driver.phone.replace(/\s/g, '')}`}
+                                       className="flex-1 py-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 text-[8px] font-black uppercase text-center transition-colors flex items-center justify-center gap-1"
+                                    >
+                                       <Phone size={9} /> Appeler
+                                     </a>
+                                 </div>
+                              </div>
+                           );
+                        });
+                     })()}
+                  </div>
                )}
             </>
          ) : (
@@ -1299,6 +1606,7 @@ const MapComponent: React.FC<{
    /** Clic sur un marqueur commande : aligne le bandeau (sélection) sur cette commande. */
    onSelectOrder?: (orderId: string) => void,
    mapOrdersFilter?: MapsOrderFilter,
+   mapsZoneFilter?: MapsZoneFilter,
    onAssignDriver?: (orderId: string, driverId: string) => void,
    onUpdateOrderStatus?: (orderId: string, status: OrderStatus) => void,
    /** Assigne ce livreur à la commande actuellement sélectionnée sur la Maps (clic marqueur livreur). */
@@ -1307,7 +1615,7 @@ const MapComponent: React.FC<{
    flyToPos?: [number, number] | null,
    flyToToken?: number,
    layoutResizeToken?: number,
-}> = ({ drivers, orders, stores, categories, selectedOrderId, onUnlinkStore: onUnlinkStore, onMapClick, onRecenter, triggerRecenter, pickingPos, pickingStore, onSelectOrder, mapOrdersFilter = 'all', onAssignDriver, onUpdateOrderStatus, onAssignDriverToMapSelection, mapLayers = { orders: true, stores: true, drivers: true }, flyToPos = null, flyToToken = 0, layoutResizeToken = 0 }) => {
+}> = ({ drivers, orders, stores, categories, selectedOrderId, onUnlinkStore: onUnlinkStore, onMapClick, onRecenter, triggerRecenter, pickingPos, pickingStore, onSelectOrder, mapOrdersFilter = 'all', mapsZoneFilter = null, onAssignDriver, onUpdateOrderStatus, onAssignDriverToMapSelection, mapLayers = { orders: true, stores: true, drivers: true }, flyToPos = null, flyToToken = 0, layoutResizeToken = 0 }) => {
    const selectedOrder = orders.find(o => String(o.id) === String(selectedOrderId));
 
    const activeStoreId = (selectedOrder as any)?.storeId || (selectedOrder as any)?.store_id;
@@ -1408,8 +1716,14 @@ const MapComponent: React.FC<{
       let arr = orders.filter(o => o.status !== 'delivered' && !o.isArchived);
       if (mapOrdersFilter === 'unassigned') arr = arr.filter(o => !o.assignedDriverId);
       if (mapOrdersFilter === 'incidents') arr = arr.filter(o => o.status === 'refused' || o.status === 'unavailable');
+      if (mapsZoneFilter) {
+         arr = arr.filter(o => {
+            const store = stores.find(s => String(s.id) === String(o.storeId || (o as any).store_id));
+            return store && store.zone_id === mapsZoneFilter;
+         });
+      }
       return arr;
-   }, [orders, mapOrdersFilter]);
+   }, [orders, mapOrdersFilter, mapsZoneFilter, stores]);
 
    const logisticsStoresForSelected = useMemo(
       () => (selectedOrder ? getOrderLogisticsMapStores(selectedOrder, stores) : []),
@@ -1455,10 +1769,13 @@ const MapComponent: React.FC<{
       );
    }, [mapPageLogisticsBoundsPoints.length, selectedOrder, activeStore]);
 
-   const mapCatalogStores = useMemo(
-      () => stores.filter(s => !s.is_deleted && isLogisticsProductStore(s) && getStoreLatLngForMap(s)),
-      [stores]
-   );
+   const mapCatalogStores = useMemo(() => {
+      let list = stores.filter(s => !s.is_deleted && isLogisticsProductStore(s) && getStoreLatLngForMap(s));
+      if (mapsZoneFilter) {
+         list = list.filter(s => s.zone_id === mapsZoneFilter);
+      }
+      return list;
+   }, [stores, mapsZoneFilter]);
 
    return (
       <div className="w-full h-full relative bg-slate-50">
@@ -1685,7 +2002,7 @@ const MapComponent: React.FC<{
             )}
 
             {/* LIVREURS */}
-            {mapLayers.drivers && drivers.map(driver => {
+            {mapLayers.drivers && drivers.filter(d => !mapsZoneFilter || d.zone_id === mapsZoneFilter).map(driver => {
                const lat = driver.lastLat ?? driver.last_lat ?? driver.latitude ?? (driver as any).x;
                const lng = driver.lastLng ?? driver.last_lng ?? driver.longitude ?? (driver as any).y;
                if (!lat || !lng) return null;
@@ -1911,6 +2228,7 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
    const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
    const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
    const [mapsOrderFilter, setMapsOrderFilter] = useState<MapsOrderFilter>('all');
+   const [mapsZoneFilter, setMapsZoneFilter] = useState<MapsZoneFilter>(null);
    const [mapsListSort, setMapsListSort] = useState<MapsListSort>('urgency');
    const [mapsSearchQuery, setMapsSearchQuery] = useState('');
    const [mapsFlyPos, setMapsFlyPos] = useState<[number, number] | null>(null);
@@ -4527,6 +4845,24 @@ const AdminDashboardInner: React.FC<AdminDashboardProps> = ({
       }
    };
 
+   const handleMapsZoneFilter = (zoneId: string | null) => {
+      setMapsZoneFilter(zoneId);
+      if (!zoneId) return;
+      const zone = deliveryZones.find(z => z.id === zoneId);
+      if (!zone) return;
+      const lat = zone.center_lat;
+      const lng = zone.center_lng;
+      if (lat != null && lng != null) {
+         setMapsFlyPos([Number(lat), Number(lng)]);
+         setMapsFlyToken(t => t + 1);
+      }
+   };
+
+   const handleFlyToCoords = (lat: number, lng: number) => {
+      setMapsFlyPos([lat, lng]);
+      setMapsFlyToken(t => t + 1);
+   };
+
    useEffect(() => {
       if (activeTab !== 'MAPS') return;
       const onKey = (e: KeyboardEvent) => {
@@ -5572,6 +5908,9 @@ ${itemsText}
       });
 
       const afterAdm = (doc as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? afterKpi + 40;
+      const orangeColor: [number, number, number] = [249, 115, 22];
+      const slateColor: [number, number, number] = [30, 41, 59];
+      const lightSlate: [number, number, number] = [148, 163, 184];
       autoTable(doc, {
          startY: afterAdm + 10,
          head: [['Magasin', 'CA livré (DH)']],
@@ -5592,9 +5931,9 @@ ${itemsText}
 
    const generateUsersPDF = () => {
       const doc = new jsPDF();
-      const orangeColor = [249, 115, 22]; // #f97316
-      const slateColor = [30, 41, 59]; // Slate 800
-      const lightSlate = [148, 163, 184]; // Slate 400
+      const orangeColor: [number, number, number] = [249, 115, 22]; // #f97316
+      const slateColor: [number, number, number] = [30, 41, 59]; // Slate 800
+      const lightSlate: [number, number, number] = [148, 163, 184]; // Slate 400
 
       // Header background
       doc.setFillColor(slateColor[0], slateColor[1], slateColor[2]);
@@ -5671,7 +6010,7 @@ ${itemsText}
          margin: { left: 15, right: 15 },
          didDrawPage: (data) => {
             // Footer on each page
-            const str = `Page ${doc.internal.getNumberOfPages()}`;
+            const str = `Page ${(doc.internal as any).getNumberOfPages()}`;
             doc.setFontSize(8);
             doc.setTextColor(lightSlate[0], lightSlate[1], lightSlate[2]);
             doc.text(str, 195, 285, { align: 'right' });
@@ -6892,10 +7231,14 @@ ${itemsText}
                         autoScrollWhileResizeDrag
                         top={(
                            <LogisticsSidebar
-                              orders={propOrders}
+                              orders={localOrders}
                               users={users}
                               stores={stores}
                               drivers={drivers}
+                              deliveryZones={deliveryZones}
+                              mapsZoneFilter={mapsZoneFilter}
+                              onMapsZoneFilterChange={handleMapsZoneFilter}
+                              onFlyToCoords={handleFlyToCoords}
                               selectedOrderId={selectedOrderId}
                               onSelectOrder={setSelectedOrderId}
                               onViewOrder={handleViewOrder}
@@ -6926,7 +7269,7 @@ ${itemsText}
                            <>
                               <MapComponent
                                  drivers={drivers}
-                                 orders={propOrders}
+                                 orders={localOrders}
                                  stores={stores}
                                  categories={dbCategories}
                                  selectedOrderId={selectedOrderId}
@@ -6938,6 +7281,7 @@ ${itemsText}
                                  pickingStore={pickingStore}
                                  onSelectOrder={(id) => setSelectedOrderId(id)}
                                  mapOrdersFilter={mapsOrderFilter}
+                                 mapsZoneFilter={mapsZoneFilter}
                                  onAssignDriver={handleAssignDriver}
                                  onUpdateOrderStatus={handleMapsOrderStatusChange}
                                  onAssignDriverToMapSelection={(driverId) => {
@@ -6969,7 +7313,61 @@ ${itemsText}
                                        <span className="h-2 w-2 rounded-full bg-slate-900"></span>
                                        <span className="text-[10px] font-black uppercase text-slate-700">{drivers.filter(d => d.is_online).length} Livreurs</span>
                                     </div>
+                                    {mapsZoneFilter && (() => {
+                                       const zone = deliveryZones.find(z => z.id === mapsZoneFilter);
+                                       if (!zone) return null;
+                                       return (
+                                          <>
+                                             <div className="hidden h-3 w-px bg-slate-200 sm:block" />
+                                             <span className="text-[9px] font-black uppercase text-indigo-600">
+                                                📍 {zone.name}
+                                             </span>
+                                          </>
+                                       );
+                                    })()}
                                  </div>
+
+                                 {/* KPIs temps réel */}
+                                 {(() => {
+                                    const waitingOrders = localOrders.filter(o => o.status !== 'delivered' && !o.isArchived && ORDER_WAITING_STATUSES.has(o.status));
+                                    const avgWaitMs = waitingOrders.length > 0 
+                                       ? waitingOrders.reduce((sum, o) => sum + (Date.now() - o.timestamp), 0) / waitingOrders.length 
+                                       : 0;
+                                    const avgWaitMins = Math.round(avgWaitMs / 60000);
+
+                                    const criticalOrdersCount = localOrders.filter(o => 
+                                       o.status !== 'delivered' && 
+                                       !o.isArchived && 
+                                       ORDER_WAITING_STATUSES.has(o.status) && 
+                                       !o.assignedDriverId && 
+                                       (Date.now() - o.timestamp) > 900000
+                                    ).length;
+
+                                    const deliveredToday = localOrders.filter(o => 
+                                       o.status === 'delivered' && 
+                                       new Date(o.timestamp).toDateString() === new Date().toDateString()
+                                    ).length;
+
+                                    return (
+                                       <div className="pointer-events-auto flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-lg backdrop-blur-md">
+                                          <div className="flex items-center gap-1 text-[9px] font-bold text-slate-600">
+                                             <Clock size={11} className="text-indigo-500" />
+                                             <span>Attente moy : <span className="font-extrabold text-slate-800">{avgWaitMins} min</span></span>
+                                          </div>
+                                          {criticalOrdersCount > 0 && (
+                                             <div className="flex items-center gap-1 text-[9px] font-black text-red-600 animate-pulse">
+                                                <AlertTriangle size={11} className="text-red-500" />
+                                                <span>🚨 {criticalOrdersCount} critique(s)</span>
+                                             </div>
+                                          )}
+                                          <div className="flex items-center gap-1 text-[9px] font-bold text-slate-600">
+                                             <CheckCircle2 size={11} className="text-emerald-500" />
+                                             <span>Livrées : <span className="font-extrabold text-slate-800">{deliveredToday}</span></span>
+                                          </div>
+                                       </div>
+                                    );
+                                 })()}
+
                                  <div className="pointer-events-auto rounded-lg border border-slate-200 bg-slate-100/95 px-2.5 py-1 text-[9px] font-bold text-slate-600">
                                     <span className="font-black text-slate-500">Raccourcis</span> · Échap désélectionne · Entrée ouvre la fiche
                                  </div>

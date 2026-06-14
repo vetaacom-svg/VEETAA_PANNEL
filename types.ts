@@ -27,6 +27,7 @@ export interface Product {
   price_editable?: boolean;
   sub_category?: string;
   store_sub_category_id?: string;
+  created_at?: string;
 }
 
 export interface Store {
@@ -148,6 +149,7 @@ export type OrderStatus =
   | 'pending'
   | 'verification'
   | 'accepted'
+  | 'confirmed'
   | 'preparing'
   | 'treatment'
   | 'progression'
@@ -187,6 +189,8 @@ export interface Order {
   assignedDriverId?: string;
   statusHistory?: { status: OrderStatus; timestamp: number }[];
   isArchived?: boolean;
+  customerEmail?: string;
+  deliveryAddress?: string;
 }
 
 export interface UserProfile {

@@ -270,11 +270,12 @@ const App: React.FC = () => {
       customerName: user.fullName || 'Client',
       phone: user.phone || '',
       location: { lat: user.lastLat, lng: user.lastLng },
-      items: [{ name: 'Commande simulation', qty: 1 }],
+      items: [{ productName: 'Commande simulation', quantity: 1 }],
       total: Math.floor(Math.random() * 300) + 50,
       category: 'Simulated',
-      assignedDriverId: null
-    } as Order;
+      assignedDriverId: undefined,
+      paymentMethod: 'cash'
+    };
     
     setOrders(prev => [...prev, newOrder]);
     setSelectedOrderId(orderId);

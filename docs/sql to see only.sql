@@ -57,6 +57,7 @@ CREATE TABLE public.stores (
   is_deleted boolean NOT NULL DEFAULT false,
   zone_id uuid,
   store_sub_category_id uuid,
+  phone text,
   CONSTRAINT stores_pkey PRIMARY KEY (id),
   CONSTRAINT stores_store_sub_category_id_fkey FOREIGN KEY (store_sub_category_id) REFERENCES public.store_sub_categories(id),
   CONSTRAINT stores_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.delivery_zones(id)
@@ -141,7 +142,9 @@ CREATE TABLE public.drivers (
   total_ratings integer DEFAULT 0,
   fcm_token text,
   is_online boolean DEFAULT false,
-  CONSTRAINT drivers_pkey PRIMARY KEY (id)
+  zone_id uuid,
+  CONSTRAINT drivers_pkey PRIMARY KEY (id),
+  CONSTRAINT drivers_zone_id_fkey FOREIGN KEY (zone_id) REFERENCES public.delivery_zones(id)
 );
 CREATE TABLE public.announcements (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),

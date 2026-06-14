@@ -887,9 +887,9 @@ export default function App() {
 
       const { data, error } = await supabase
         .from('orders')
-        .select(selectFields)
+        .select(selectFields as any)
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(100) as { data: any[] | null; error: any };
 
       if (error) {
         console.error("FETCH ORDERS ERROR:", error);
